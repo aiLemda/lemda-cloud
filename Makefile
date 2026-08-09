@@ -1,4 +1,4 @@
-.PHONY: up down logs ps test dev-orchestrator dev-gateway dev-fleet dev-frontend init
+.PHONY: up down logs ps test dev-orchestrator dev-gateway dev-fleet dev-frontend init egress-up egress-down egress-logs
 
 # --- Infra (databases, object storage) ---
 up:
@@ -15,18 +15,33 @@ ps:
 	docker compose -f infra/docker-compose.yml --env-file infra/.env ps
 
 # --- First-time setup ---
-init: up
+init: up egress-up
 	@echo "Databases ready. Create infra/.env from infra/.env.example first."
+
+# --- Sandbox egress (internal network + allowlisted proxy, Ch 12 golden rule) ---
+egress-up:
+	docker network inspect sandbox-net >/dev/null 2>&1 || docker network create --internal sandbox-net
+	docker build -q -t sandbox-egress infra/egress
+	docker rm -f sandbox-egress 2>/dev/null || true
+	docker run -d --name sandbox-egress --network bridge sandbox-egress >/dev/null
+	docker network connect sandbox-net sandbox-egress
+	@echo "Egress proxy up: sandbox-egress on :8888 (allowlist: GitHub, PyPI, npm)"
+
+egress-down:
+	docker rm -f sandbox-egress 2>/dev/null || true
+
+egress-logs:
+	docker logs -f sandbox-egress
 
 # --- Dev servers (one per service, run in separate terminals) ---
 dev-orchestrator:
-	cd orchestrator && uv run uvicorn main:app --reload --port 8000
+	cd orchestrator && uv run uvicorn main:app --reload --port 8010
 
 dev-gateway:
 	cd sandbox-gateway && cargo run
 
 dev-fleet:
-	cd sandbox-fleet && uv run python main.py
+	cd sandbox-fleet && uv run uvicorn main:app --reload --port 8011
 
 dev-frontend:
 	cd frontend && bun dev

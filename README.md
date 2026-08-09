@@ -12,14 +12,14 @@ all visible and steerable from a web UI.
 | `orchestrator/` | The brain: agent loop, planning, memory, evals | Python 3.11 + FastAPI (uv) |
 | `sandbox-gateway/` | The body: PTY bridge, WebSocket fan-out, per-sandbox daemon | Rust + axum + tokio |
 | `sandbox-fleet/` | Sandbox lifecycle: containers/microVMs, warm pool, placement | Python + Docker/Firecracker SDKs |
-| `infra/` | Postgres, Redis, Mongo, MinIO (S3) + docker-compose | Docker Compose |
+| `infra/` | Postgres, Redis, Mongo, MinIO (S3), egress proxy + docker-compose | Docker Compose |
 
 ## How to run (dev)
 
 ```bash
 cp infra/.env.example infra/.env      # once
-make init                             # boot databases (docker compose up -d)
-make dev-orchestrator                 # terminal 1 — API + agent brain (http://localhost:8000)
+make init                             # boot databases + sandbox egress (docker compose up -d)
+make dev-orchestrator                 # terminal 1 — API + agent brain (http://localhost:8010)
 make dev-gateway                      # terminal 2 — Rust gateway
 make dev-fleet                        # terminal 3 — fleet manager
 make dev-frontend                     # terminal 4 — UI
