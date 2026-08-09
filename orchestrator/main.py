@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException
+from httpx import HTTPError
 from pydantic import BaseModel
 
 from llm import LLMSettings, ask_llm
@@ -29,7 +30,7 @@ def llm_ping() -> dict[str, str]:
 async def sandbox_exec_endpoint(req: ExecRequest) -> dict:
     try:
         return await sandbox_exec(req.cmd, req.image, req.timeout_s)
-    except Exception as e:
+    except HTTPError as e:
         raise HTTPException(status_code=502, detail=f"gateway call failed: {e}")
 
 
