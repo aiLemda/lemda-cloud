@@ -46,11 +46,11 @@ Note: `openrouter/free` is OpenRouter's auto-router - it picks any currently-fre
 
 ```
 cd ~/Desktop/devin-clone/orchestrator
-uv run uvicorn main:app --reload --port 8010
-curl http://127.0.0.1:8010/llm/ping
+uv run uvicorn main:app --reload --port 8000
+curl http://127.0.0.1:8000/llm/ping
 ```
 
 ## Next steps
-- Fix `make dev-fleet` and orchestrator port 8000 -> 8010 (Clario owns 8000)
+- Fix `make dev-fleet` (broken FastAPI start → uvicorn)
 - Day 1 sandbox v0: Rust gateway `POST /exec` + Docker container with egress allowlist
 - Benchmark `cohere/north-mini-code:free` vs `openai/gpt-oss-20b:free` and pin the winner in `.env`

@@ -35,7 +35,7 @@ egress-logs:
 
 # --- Dev servers (one per service, run in separate terminals) ---
 dev-orchestrator:
-	cd orchestrator && uv run uvicorn main:app --reload --port 8010
+	cd orchestrator && uv run uvicorn main:app --reload --port 8000
 
 dev-gateway:
 	cd sandbox-gateway && cargo run
