@@ -2,6 +2,7 @@ from fastapi import FastAPI, HTTPException
 from httpx import HTTPError
 from pydantic import BaseModel
 
+from agent import run_agent
 from llm import LLMSettings, ask_llm
 from sandbox import sandbox_exec
 
@@ -12,6 +13,10 @@ class ExecRequest(BaseModel):
     cmd: str
     image: str | None = None
     timeout_s: int = 30
+
+
+class AgentRunRequest(BaseModel):
+    task: str
 
 
 @app.get("/health")
@@ -37,3 +42,10 @@ async def sandbox_exec_endpoint(req: ExecRequest) -> dict:
 @app.get("/sandbox/ls")
 async def sandbox_ls() -> dict:
     return await sandbox_exec("ls -la /")
+
+
+@app.post("/agent/run")
+async def agent_run(req: AgentRunRequest) -> dict:
+    if not req.task.strip():
+        raise HTTPException(status_code=422, detail="task must not be empty")
+    return await run_agent(req.task)

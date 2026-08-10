@@ -1,4 +1,4 @@
-Day 1:
+✅Day 1:
 
 hen I execute Day 1 (after you approve this plan)
 Wire LLM — add LiteLLM to orchestrator, load infra/.env, make a real call to openrouter/free with your key to prove the loop works
@@ -9,3 +9,35 @@ Benchmark + pin — test cohere/north-mini-code:free vs gpt-oss-20b:free on a co
 Commit + push — per your standing rule, I report each change (what → which file → what it brings) and push to main
 
 
+--------------------------------------------------------------------------------------------------------------------------------------------------------
+🌕Day 3 build list (exactly what I'll do, in order)
+
+
+✅Step 1 — Teach the brain a button → orchestrator/agent.py (new, ~120 lines)
+run_agent(task: str) -> dict — the loop engine from the diagram
+System prompt (rules) + step counter + max-10 guard + final <answer> extraction
+Uses real tool calling first, falls back to <bash> tag parsing automatically
+
+✅Step 2 — Upgrade the phone → orchestrator/llm.py (edit)
+Add chat(messages, tools=None) returning the full message (with tool_calls if any) — ask_llm stays for simple ping
+
+✅Step 3 — Expose it to the world → orchestrator/main.py (edit)
+Add POST /agent/run with body {"task": "..."} → returns {steps: [...], answer: "..."}
+Keep every step in the response so you can SEE the robot think (traceability = Day 45's observability, planted today)
+
+✅Step 4 — Tests that need no AI → orchestrator/test_agent.py (new)
+Monkeypatched fake brain: one test where it uses the tool, one where it answers immediately, one where it never finishes (max-steps guard fires)
+CI-safe: no network, no Docker
+
+✅Step 5 — LIVE demo (the moment!)
+Start gateway + orchestrator, then:
+POST /agent/run  {"task": "list the files in the sandbox root and tell me the Python version"}
+Watch the robot: THINK → ls -la / → LOOK → python3 --version → LOOK → answer 🎉
+Also demo it answering WITHOUT commands ("what is 2+2") to prove it knows when to stop
+
+✅Step 6 — Docs + push
+docs/day3-agent-loop.md — line-level report (your standing rule) → commit → push → CI green
+
+Step 7 — (Optional stretch, only if you want) also demo pip install requests through the loop — proving the brain can use the egress allowlist by itself.
+
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------

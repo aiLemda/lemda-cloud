@@ -1,0 +1,111 @@
+import json
+import re
+from typing import Any
+
+import llm
+import sandbox
+
+MAX_STEPS = 10
+
+SYSTEM_PROMPT = """You are a coding agent running inside a Linux sandbox (root, python:3.12-slim).
+You have exactly ONE tool: run_bash - it runs a shell command in the sandbox and returns its output.
+Rules:
+- Use run_bash to explore and complete the user's task.
+- The sandbox network only reaches GitHub, PyPI, and npm. Do not expect other sites.
+- Prefer short, safe commands.
+- When the task is finished, reply with a final answer inside <answer>...</answer> tags.
+- If you need to run a command but tool calling is unavailable, reply with <bash>command</bash> instead.
+"""
+
+BASH_TOOL: dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": "run_bash",
+        "description": "Run a shell command inside the Linux sandbox. Returns stdout, stderr and exit code.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "cmd": {"type": "string", "description": "the shell command to run"}
+            },
+            "required": ["cmd"],
+        },
+    },
+}
+
+
+def _summarize(result: dict[str, Any]) -> str:
+    out = result.get("stdout", "")
+    err = result.get("stderr", "")
+    if result.get("timed_out"):
+        return "command timed out - sandbox container killed"
+    if err and not out:
+        return f"exit_code={result.get('exit_code')} stderr:\n{err}"
+    if out:
+        return f"exit_code={result.get('exit_code')} stdout:\n{out}"
+    return f"exit_code={result.get('exit_code')} (no output)"
+
+
+async def run_agent(task: str, max_steps: int = MAX_STEPS) -> dict[str, Any]:
+    messages: list[dict[str, Any]] = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": task},
+    ]
+    steps: list[dict[str, Any]] = []
+
+    for _ in range(max_steps):
+        try:
+            message = await llm.achat(messages, tools=[BASH_TOOL])
+        except Exception as e:  # noqa: BLE001 - LLM providers throw heterogeneous exceptions; the loop must survive any of them
+            return {"ok": False, "error": f"llm call failed: {e}", "steps": steps}
+        messages.append(message)
+
+        content = message.get("content") or ""
+        tool_calls = message.get("tool_calls") or []
+
+        if tool_calls:
+            for call in tool_calls:
+                try:
+                    args = json.loads(call["function"].get("arguments") or "{}")
+                    cmd = str(args.get("cmd", ""))
+                except (json.JSONDecodeError, KeyError):
+                    cmd = ""
+                if not cmd:
+                    result = {
+                        "exit_code": None,
+                        "stdout": "",
+                        "stderr": "no cmd argument provided",
+                        "timed_out": False,
+                    }
+                else:
+                    result = await sandbox.sandbox_exec(cmd)
+                steps.append({"type": "tool", "cmd": cmd, "result": result})
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": call.get("id"),
+                        "content": _summarize(result),
+                    }
+                )
+            continue
+
+        bash_matches = re.findall(r"<bash>(.*?)</bash>", content, re.DOTALL)
+        if bash_matches:
+            cmd = bash_matches[-1].strip()
+            result = await sandbox.sandbox_exec(cmd)
+            steps.append({"type": "tool", "cmd": cmd, "result": result})
+            messages.append(
+                {"role": "user", "content": f"command output:\n{_summarize(result)}"}
+            )
+            continue
+
+        answer_match = re.search(r"<answer>(.*?)</answer>", content, re.DOTALL)
+        if answer_match:
+            return {"ok": True, "answer": answer_match.group(1).strip(), "steps": steps}
+        if content.strip():
+            return {"ok": True, "answer": content.strip(), "steps": steps}
+
+    return {
+        "ok": False,
+        "error": f"max steps ({max_steps}) reached without a final answer",
+        "steps": steps,
+    }
