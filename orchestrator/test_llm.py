@@ -65,6 +65,8 @@ def test_chat_raises_without_fallback(monkeypatch) -> None:
 
 
 def test_achat_runs_off_thread(monkeypatch) -> None:
+    monkeypatch.setenv("LLM_API_KEY", "sk-primary")
+
     def fake_completion(**kwargs: Any) -> FakeResponse:
         return FakeResponse()
 
