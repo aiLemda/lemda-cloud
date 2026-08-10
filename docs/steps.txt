@@ -1,7 +1,11 @@
+Day 1:
+
 hen I execute Day 1 (after you approve this plan)
 Wire LLM — add LiteLLM to orchestrator, load infra/.env, make a real call to openrouter/free with your key to prove the loop works
-Fix 2 pre-flight bugs — make dev-fleet (broken FastAPI start → uvicorn) and orchestrator port 8000 → 8010 (Clario owns 8000)
+Fix 2 pre-flight bugs — make dev-fleet (broken FastAPI start → uvicorn) and orchestrator port 8010 → 8000 
 Build sandbox v0 — Rust gateway POST /exec → runs command in Docker container with egress allowlist (only npm/pip/GitHub reachable — the Ch 12 golden rule)
 End-to-end test — orchestrator → gateway → container → ls output comes back to you (first real agent action!)
 Benchmark + pin — test cohere/north-mini-code:free vs gpt-oss-20b:free on a coding task, pin the winner in .env
 Commit + push — per your standing rule, I report each change (what → which file → what it brings) and push to main
+
+

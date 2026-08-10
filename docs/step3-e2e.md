@@ -6,7 +6,7 @@ The first real agent action: the orchestrator (the "brain") sends a command thro
 
 ```
 curl /sandbox/ls
-  -> orchestrator (FastAPI :8010)  sandbox.py -> httpx POST
+  -> orchestrator (FastAPI :8000)  sandbox.py -> httpx POST
   -> sandbox-gateway (Rust :8080)  /exec handler -> docker run
   -> sandbox-net (--internal network)
   -> python:3.12-slim container   sh -lc "ls -la /"
@@ -47,7 +47,7 @@ curl /sandbox/ls
 ## Proof (real output, 9 Aug 2026)
 
 ```
-$ curl http://127.0.0.1:8010/sandbox/ls
+$ curl http://127.0.0.1:8000/sandbox/ls
 {"exit_code":0,"stdout":"total 56\ndrwxr-xr-x   1 root root 4096 Aug  9 16:55 .\n...
 drwxr-xr-x   1 root root 4096 Aug  3 00:00 usr\ndrwxr-xr-x   1 root root 4096 Aug  3 00:00 var\n",
  "stderr":"","timed_out":false,"duration_ms":494}

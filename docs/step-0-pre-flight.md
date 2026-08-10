@@ -28,29 +28,29 @@ Port 8000 is already occupied by the user's other project ("Clario Backend" resp
   ```
 - After:
   ```
-  cd orchestrator && uv run uvicorn main:app --reload --port 8010
+  cd orchestrator && uv run uvicorn main:app --reload --port 8000
   ```
 
 ## Documentation sync
 
 ### File: `README.md`, line 22
 - Before: `make dev-orchestrator  # terminal 1 — API + agent brain (http://localhost:8000)`
-- After: `make dev-orchestrator  # terminal 1 — API + agent brain (http://localhost:8010)`
+- After: `make dev-orchestrator  # terminal 1 — API + agent brain (http://localhost:8000)`
 
 ## Port map (now consistent everywhere)
 
 | Service | Port | Command |
 |---|---|---|
-| orchestrator | 8010 | `make dev-orchestrator` |
+| orchestrator | 8000 | `make dev-orchestrator` |
 | sandbox-gateway | 8080 | `make dev-gateway` |
 | sandbox-fleet | 8011 | `make dev-fleet` |
 | frontend (bun) | 3000 | `make dev-frontend` |
 
 ## Verification (real output, 9 Aug 2026)
 
-Orchestrator on 8010:
+Orchestrator on 8000:
 ```
-Uvicorn running on http://127.0.0.1:8010
+Uvicorn running on http://127.0.0.1:8000
 GET /health 200 OK -> {"status":"ok","service":"orchestrator"}
 ```
 

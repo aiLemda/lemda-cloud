@@ -19,7 +19,7 @@ all visible and steerable from a web UI.
 ```bash
 cp infra/.env.example infra/.env      # once
 make init                             # boot databases + sandbox egress (docker compose up -d)
-make dev-orchestrator                 # terminal 1 — API + agent brain (http://localhost:8010)
+make dev-orchestrator                 # terminal 1 — API + agent brain (http://localhost:8000)
 make dev-gateway                      # terminal 2 — Rust gateway
 make dev-fleet                        # terminal 3 — fleet manager
 make dev-frontend                     # terminal 4 — UI
