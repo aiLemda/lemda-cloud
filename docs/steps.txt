@@ -10,7 +10,7 @@ Commit + push — per your standing rule, I report each change (what → which f
 
 
 --------------------------------------------------------------------------------------------------------------------------------------------------------
-🌕Day 3 build list (exactly what I'll do, in order)
+✅Day 3 build list (exactly what I'll do, in order)
 
 
 ✅Step 1 — Teach the brain a button → orchestrator/agent.py (new, ~120 lines)
@@ -41,3 +41,25 @@ docs/day3-agent-loop.md — line-level report (your standing rule) → commit �
 Step 7 — (Optional stretch, only if you want) also demo pip install requests through the loop — proving the brain can use the egress allowlist by itself.
 
 ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+The Day 4 plan (7 steps)
+
+
+✅Step 1 — Bridge the ports (the CORS problem). Recommended: add a proxy route in frontend/src/index.ts (Bun server): POST /api/agent/run → forwards to http://127.0.0.1:8000/agent/run (server-side URL via BUN_ORCHESTRATOR_URL env, default http://127.0.0.1:8000). No CORS needed, browser stays same-origin. Alternative: add CORS middleware to main.py allowing http://localhost:3000. (Trade-off: touches backend + open CORS; proxy keeps backend pure.)
+
+✅Step 2 — API types + client (frontend/src/lib/). TypeScript types mirroring the API: AgentRunResponse { ok: boolean; answer?: string; error?: string; steps: Step[] } with Step { type: "tool"; cmd: string; result: { exit_code, stdout, stderr, timed_out, duration_ms } }, plus a runAgent(task) fetch function with error handling (non-2xx, network fail).
+
+✅Step 3 — Chat state (frontend/src/lib/chat.tsx or a hook). States: idle | running | done | error. Message list: user messages + robot messages. While running: "🧠 thinking…" indicator. On completion: answer + steps.
+
+✅Step 4 — Chat UI (frontend/src/App.tsx rewrite + components).
+Message list (scrollable, overflow-y-auto, no new deps needed)
+Input box + Send button (Enter to send, disable while running)
+The trace viewer — the star: steps render as a vertical “robot diary”: THINK 🧠 → run_bash("ls -la") → LOOK 👀 → output (exit 0, 1.6s) cards with collapsible stdout.
+Error state card (when ok: false or fetch fails)
+Empty state (friendly “what should the robot do?”)
+
+✅Step 5 — Keep the APITester as a debug tab (small Tabs or toggle) so raw API testing stays one click — or remove it. (Your call.)
+
+🔥Step 6 — Live test + CI. bun run build locally, then start gateway + orchestrator + frontend, and in the browser: task 1 (tool task, e.g. "list files + python version") → see steps appear; task 2 ("2+2") → instant answer, 0 steps. Push → CI green (frontend job runs bun run build).
+
+Step 7 — Doc + push (your standing rule): docs/day4-chat-ui.md with topic/what/why/change/line-by-line, plus per-step docs.

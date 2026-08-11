@@ -1,10 +1,40 @@
 import { serve } from "bun";
 import index from "./index.html";
 
+const ORCHESTRATOR_URL = process.env.BUN_ORCHESTRATOR_URL ?? "http://127.0.0.1:8000";
+
 const server = serve({
   routes: {
     // Serve index.html for all unmatched routes.
     "/*": index,
+
+    "/api/health": async () => {
+      try {
+        const res = await fetch(`${ORCHESTRATOR_URL}/health`);
+        return new Response(res.body, { status: res.status });
+      } catch (err) {
+        return Response.json({ status: "down" }, { status: 502 });
+      }
+    },
+
+    "/api/agent/run": async req => {
+      try {
+        const res = await fetch(`${ORCHESTRATOR_URL}/agent/run`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: await req.text(),
+        });
+        return new Response(res.body, {
+          status: res.status,
+          headers: { "content-type": "application/json" },
+        });
+      } catch (err) {
+        return Response.json(
+          { ok: false, error: `orchestrator unreachable: ${err}`, steps: [] },
+          { status: 502 },
+        );
+      }
+    },
 
     "/api/hello": {
       async GET(req) {

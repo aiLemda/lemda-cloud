@@ -17,7 +17,12 @@ export function APITester() {
       const endpoint = formData.get("endpoint") as string;
       const url = new URL(endpoint, location.href);
       const method = formData.get("method") as string;
-      const res = await fetch(url, { method });
+      const body = formData.get("body") as string;
+      const res = await fetch(url, {
+        method,
+        headers: body ? { "content-type": "application/json" } : undefined,
+        body: body || undefined,
+      });
 
       const data = await res.json();
       responseInputRef.current!.value = JSON.stringify(data, null, 2);
@@ -38,6 +43,7 @@ export function APITester() {
           </SelectTrigger>
           <SelectContent align="start">
             <SelectItem value="GET">GET</SelectItem>
+            <SelectItem value="POST">POST</SelectItem>
             <SelectItem value="PUT">PUT</SelectItem>
           </SelectContent>
         </Select>
@@ -49,6 +55,15 @@ export function APITester() {
           Send
         </Button>
       </form>
+      <Label htmlFor="body" className="text-xs text-muted-foreground">
+        JSON body (for POST)
+      </Label>
+      <Textarea
+        id="body"
+        name="body"
+        placeholder='{"task": "what is 2+2"}'
+        className="min-h-[80px] font-mono resize-y"
+      />
       <Label htmlFor="response" className="sr-only">
         Response
       </Label>
