@@ -21,13 +21,18 @@ export function useChat() {
     async (task: string) => {
       const trimmed = task.trim();
       if (!trimmed || state === "running") return;
+      const history: { role: "user" | "assistant"; content: string }[] = messages
+        .slice(-10)
+        .map(m => ({ role: m.role === "user" ? "user" : "assistant", content: m.content }));
       setMessages(prev => [...prev, { role: "user", content: trimmed }]);
       setState("running");
       setAnswer("");
       setSteps([]);
       setError("");
-      const res = await streamAgent(trimmed, step =>
-        setSteps(prev => [...prev, step]),
+      const res = await streamAgent(
+        trimmed,
+        step => setSteps(prev => [...prev, step]),
+        history,
       );
       setMessages(prev => [...prev, { role: "agent", content: res.answer ?? res.error ?? "" }]);
       if (res.ok) {
@@ -39,7 +44,7 @@ export function useChat() {
         setState("error");
       }
     },
-    [state],
+    [state, messages],
   );
 
   const reset = useCallback(() => {

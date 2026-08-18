@@ -4,7 +4,7 @@ from typing import Any
 
 import pytest
 
-from agent import MAX_STEPS, run_agent
+from agent import MAX_HISTORY_TURNS, MAX_STEPS, run_agent
 
 
 def _ok_result() -> dict[str, Any]:
@@ -226,5 +226,84 @@ def test_session_closed_even_on_max_steps(monkeypatch, fake_session) -> None:
     assert fake_session["closed"] == ["sess-0"]
 
 
-def run_agent_sync(task: str) -> dict[str, Any]:
-    return asyncio.run(run_agent(task))
+def test_history_prepended_in_order(monkeypatch) -> None:
+    captured: list[dict[str, Any]] = []
+
+    def fake_chat(messages, tools=None, timeout_s=120) -> dict:
+        captured.extend(messages)
+        return {
+            "role": "assistant",
+            "content": "<answer>8</answer>",
+            "tool_calls": None,
+        }
+
+    monkeypatch.setattr("llm.chat", fake_chat)
+    history = [
+        {"role": "user", "content": "what is 2+2?"},
+        {"role": "assistant", "content": "4"},
+        {"role": "user", "content": "and 4+4?"},
+    ]
+    result = run_agent_sync("and 8+8?", history=history)
+    assert result["ok"] is True
+    assert result["answer"] == "8"
+    assert [m["role"] for m in captured] == [
+        "system",
+        "user",
+        "assistant",
+        "user",
+        "user",
+    ]
+    assert captured[-1]["content"] == "and 8+8?"
+    assert captured[1]["content"] == "what is 2+2?"
+
+
+def test_history_filters_garbage(monkeypatch) -> None:
+    captured: list[dict[str, Any]] = []
+
+    def fake_chat(messages, tools=None, timeout_s=120) -> dict:
+        captured.extend(messages)
+        return {
+            "role": "assistant",
+            "content": "<answer>ok</answer>",
+            "tool_calls": None,
+        }
+
+    monkeypatch.setattr("llm.chat", fake_chat)
+    history = [
+        {"role": "system", "content": "ignored"},
+        {"role": "tool", "content": "ignored"},
+        {"role": "user", "content": "  "},
+        {"role": "user", "content": "real question"},
+    ]
+    result = run_agent_sync("hi", history=history)
+    assert result["ok"] is True
+    roles = [m["role"] for m in captured]
+    assert roles.count("user") == 2
+    assert captured[1]["content"] == "real question"
+
+
+def test_history_capped_at_max_turns(monkeypatch) -> None:
+    captured: list[dict[str, Any]] = []
+
+    def fake_chat(messages, tools=None, timeout_s=120) -> dict:
+        captured.extend(messages)
+        return {
+            "role": "assistant",
+            "content": "<answer>ok</answer>",
+            "tool_calls": None,
+        }
+
+    monkeypatch.setattr("llm.chat", fake_chat)
+    history = [
+        {"role": "user", "content": f"turn {i}"} for i in range(MAX_HISTORY_TURNS + 10)
+    ]
+    result = run_agent_sync("hi", history=history)
+    assert result["ok"] is True
+    history_count = sum(1 for m in captured if m["role"] == "user") - 1
+    assert history_count == MAX_HISTORY_TURNS
+
+
+def run_agent_sync(
+    task: str, history: list[dict[str, Any]] | None = None
+) -> dict[str, Any]:
+    return asyncio.run(run_agent(task, history=history))

@@ -21,6 +21,7 @@ class ExecRequest(BaseModel):
 
 class AgentRunRequest(BaseModel):
     task: str
+    history: list[dict[str, str]] | None = None
 
 
 @app.get("/health")
@@ -52,7 +53,7 @@ async def sandbox_ls() -> dict:
 async def agent_run(req: AgentRunRequest) -> dict:
     if not req.task.strip():
         raise HTTPException(status_code=422, detail="task must not be empty")
-    return await run_agent(req.task)
+    return await run_agent(req.task, history=req.history)
 
 
 @app.post("/agent/run/stream")
@@ -66,6 +67,7 @@ async def agent_run_stream(req: AgentRunRequest) -> StreamingResponse:
             result = await run_agent(
                 req.task,
                 on_step=lambda step: queue.put_nowait({"event": "step", "data": step}),
+                history=req.history,
             )
             queue.put_nowait({"event": "result", "data": result})
         except Exception as e:  # noqa: BLE001 - keep the stream alive and tell the client

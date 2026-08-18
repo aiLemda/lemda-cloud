@@ -49,13 +49,14 @@ export async function runAgent(task: string): Promise<AgentRunResponse> {
 export async function streamAgent(
   task: string,
   onStep: (step: ToolStep) => void,
+  history?: { role: "user" | "assistant"; content: string }[],
 ): Promise<AgentRunResponse> {
   let res: Response;
   try {
     res = await fetch("/api/agent/run/stream", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ task }),
+      body: JSON.stringify({ task, history: history ?? [] }),
     });
   } catch (err) {
     return { ok: false, error: `network error: ${err}`, steps: [] };

@@ -7,6 +7,7 @@ import llm
 import sandbox
 
 MAX_STEPS = 10
+MAX_HISTORY_TURNS = 20
 
 SYSTEM_PROMPT = """You are a coding agent running inside a Linux sandbox (root, python:3.12-slim).
 You have exactly ONE tool: run_bash - it runs a shell command in the sandbox and returns its output.
@@ -46,20 +47,39 @@ def _summarize(result: dict[str, Any]) -> str:
     return f"exit_code={result.get('exit_code')} (no output)"
 
 
+def _sanitize_history(history: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    """Keep only well-formed user/assistant turns, oldest first, capped."""
+    if not history:
+        return []
+    cleaned: list[dict[str, Any]] = []
+    for turn in history:
+        role = turn.get("role")
+        content = turn.get("content")
+        if (
+            role in ("user", "assistant")
+            and isinstance(content, str)
+            and content.strip()
+        ):
+            cleaned.append({"role": role, "content": content})
+    return cleaned[-MAX_HISTORY_TURNS:]
+
+
 async def run_agent(
     task: str,
     max_steps: int = MAX_STEPS,
     on_step: Callable[[dict[str, Any]], None] | None = None,
+    history: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Run the agent loop inside one persistent sandbox session.
 
     The session container is created once, every command runs inside it, and
     it is removed when the run finishes - so files and installs survive
-    between steps.
+    between steps. `history` carries prior conversation turns so the agent
+    can answer follow-ups with full context.
     """
     session_id = await sandbox.sandbox_create_session()
     try:
-        return await _run_agent(task, session_id, max_steps, on_step)
+        return await _run_agent(task, session_id, max_steps, on_step, history)
     finally:
         await sandbox.sandbox_close_session(session_id)
 
@@ -69,9 +89,11 @@ async def _run_agent(
     session_id: str,
     max_steps: int = MAX_STEPS,
     on_step: Callable[[dict[str, Any]], None] | None = None,
+    history: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": SYSTEM_PROMPT},
+        *_sanitize_history(history),
         {"role": "user", "content": task},
     ]
     steps: list[dict[str, Any]] = []

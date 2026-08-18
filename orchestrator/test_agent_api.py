@@ -4,7 +4,9 @@ from main import app
 
 
 def test_agent_run_wiring(monkeypatch) -> None:
-    async def fake_run(task: str, max_steps: int = 10) -> dict:
+    async def fake_run(
+        task: str, max_steps: int = 10, on_step=None, history=None
+    ) -> dict:
         return {
             "ok": True,
             "answer": "files listed",
@@ -30,7 +32,9 @@ def test_agent_run_rejects_empty_task() -> None:
 
 
 def test_agent_run_stream_emits_steps(monkeypatch) -> None:
-    async def fake_run(task: str, max_steps: int = 10, on_step=None) -> dict:
+    async def fake_run(
+        task: str, max_steps: int = 10, on_step=None, history=None
+    ) -> dict:
         for n in (1, 2):
             if on_step:
                 on_step(
@@ -57,3 +61,24 @@ def test_agent_run_stream_emits_steps(monkeypatch) -> None:
     assert '"cmd": "echo 2"' in body
     assert "event: result" in body
     assert '"answer": "done"' in body
+
+
+def test_agent_run_forwards_history(monkeypatch) -> None:
+    seen: dict[str, object] = {}
+
+    async def fake_run(
+        task: str, max_steps: int = 10, on_step=None, history=None
+    ) -> dict:
+        seen.update({"task": task, "history": history})
+        return {"ok": True, "answer": "done", "steps": []}
+
+    monkeypatch.setattr("main.run_agent", fake_run)
+    client = TestClient(app)
+    history = [
+        {"role": "user", "content": "what is 2+2?"},
+        {"role": "assistant", "content": "4"},
+    ]
+    resp = client.post("/agent/run", json={"task": "and 4+4?", "history": history})
+    assert resp.status_code == 200
+    assert seen["task"] == "and 4+4?"
+    assert seen["history"] == history
