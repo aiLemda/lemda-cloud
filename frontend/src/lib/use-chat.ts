@@ -33,6 +33,7 @@ export function useChat() {
         trimmed,
         step => setSteps(prev => [...prev, step]),
         history,
+        delta => setAnswer(prev => prev + delta),
       );
       setMessages(prev => [...prev, { role: "agent", content: res.answer ?? res.error ?? "" }]);
       if (res.ok) {

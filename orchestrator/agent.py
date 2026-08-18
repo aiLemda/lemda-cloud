@@ -64,22 +64,52 @@ def _sanitize_history(history: list[dict[str, Any]] | None) -> list[dict[str, An
     return cleaned[-MAX_HISTORY_TURNS:]
 
 
+_ANSWER_TAG_RE = re.compile(r"<answer\s*>|</answer\s*>")
+_MAX_TAG_LEN = 15
+
+
+class _AnswerTagFilter:
+    """Streams content through, dropping <answer>...</answer> tag delimiters
+    even when they are split across token boundaries.
+
+    A trailing run that could still become a tag is held back until the next
+    token decides; anything longer than a tag can possibly be is flushed."""
+
+    def __init__(self, on_delta: Callable[[str], None]) -> None:
+        self._on_delta = on_delta
+        self._buffer = ""
+
+    def push(self, delta: str) -> None:
+        cleaned = _ANSWER_TAG_RE.sub("", self._buffer + delta)
+        idx = cleaned.rfind("<")
+        if idx != -1 and len(cleaned) - idx <= _MAX_TAG_LEN:
+            emit, self._buffer = cleaned[:idx], cleaned[idx:]
+        else:
+            emit, self._buffer = cleaned, ""
+        if emit:
+            self._on_delta(emit)
+
+
 async def run_agent(
     task: str,
     max_steps: int = MAX_STEPS,
     on_step: Callable[[dict[str, Any]], None] | None = None,
     history: list[dict[str, Any]] | None = None,
+    on_answer_token: Callable[[str], None] | None = None,
 ) -> dict[str, Any]:
     """Run the agent loop inside one persistent sandbox session.
 
     The session container is created once, every command runs inside it, and
     it is removed when the run finishes - so files and installs survive
     between steps. `history` carries prior conversation turns so the agent
-    can answer follow-ups with full context.
+    can answer follow-ups with full context. `on_answer_token` receives the
+    model's answer text as it is generated (answer tags stripped).
     """
     session_id = await sandbox.sandbox_create_session()
     try:
-        return await _run_agent(task, session_id, max_steps, on_step, history)
+        return await _run_agent(
+            task, session_id, max_steps, on_step, history, on_answer_token
+        )
     finally:
         await sandbox.sandbox_close_session(session_id)
 
@@ -90,6 +120,7 @@ async def _run_agent(
     max_steps: int = MAX_STEPS,
     on_step: Callable[[dict[str, Any]], None] | None = None,
     history: list[dict[str, Any]] | None = None,
+    on_answer_token: Callable[[str], None] | None = None,
 ) -> dict[str, Any]:
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": SYSTEM_PROMPT},
@@ -97,10 +128,15 @@ async def _run_agent(
         {"role": "user", "content": task},
     ]
     steps: list[dict[str, Any]] = []
+    tag_filter = _AnswerTagFilter(on_answer_token) if on_answer_token else None
 
     for _ in range(max_steps):
         try:
-            message = await llm.achat(messages, tools=[BASH_TOOL])
+            message = await llm.achat_stream(
+                messages,
+                tools=[BASH_TOOL],
+                on_token=tag_filter.push if tag_filter else None,
+            )
         except Exception as e:  # noqa: BLE001 - LLM providers throw heterogeneous exceptions; the loop must survive any of them
             return {"ok": False, "error": f"llm call failed: {e}", "steps": steps}
         messages.append(message)

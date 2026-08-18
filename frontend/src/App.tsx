@@ -129,11 +129,20 @@ export function App() {
             {state === "running" && (
               <div className="flex flex-col gap-3">
                 {steps.length > 0 && <TraceViewer steps={steps} />}
-                <div className="flex justify-start">
-                  <div className="flex items-center gap-2 rounded-2xl bg-muted px-4 py-2 text-sm text-muted-foreground">
-                    <span className="animate-pulse">🧠 thinking…</span>
+                {answer ? (
+                  <div className="flex justify-start">
+                    <div className="flex gap-2 rounded-2xl bg-muted px-4 py-2 text-sm whitespace-pre-wrap">
+                      <span>{answer}</span>
+                      <span className="animate-pulse text-muted-foreground">▍</span>
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <div className="flex justify-start">
+                    <div className="flex items-center gap-2 rounded-2xl bg-muted px-4 py-2 text-sm text-muted-foreground">
+                      <span className="animate-pulse">🧠 thinking…</span>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 

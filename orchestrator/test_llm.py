@@ -1,4 +1,5 @@
 import asyncio
+import json
 from typing import Any
 
 import pytest
@@ -85,6 +86,97 @@ def test_achat_runs_off_thread(monkeypatch) -> None:
 
     result = asyncio.run(main())
     assert result["content"] == "hi"
+
+
+def test_achat_stream_falls_back_to_single_token(monkeypatch) -> None:
+    monkeypatch.setenv("LLM_API_KEY", "sk-primary")
+    monkeypatch.setenv("LLM_PROVIDER", "openrouter")
+    monkeypatch.setenv("LLM_MODEL", "openrouter/free")
+
+    def fake_completion(**kwargs: Any) -> FakeResponse:
+        return FakeResponse()
+
+    monkeypatch.setattr("llm.litellm.completion", fake_completion)
+
+    deltas: list[str] = []
+
+    async def main() -> dict[str, Any]:
+        return await llm.achat_stream(
+            [{"role": "user", "content": "hi"}], on_token=deltas.append
+        )
+
+    result = asyncio.run(main())
+    assert result["content"] == "hi"
+    assert deltas == ["hi"]
+
+
+def test_achat_stream_ollama_deltas_and_tool_calls(monkeypatch) -> None:
+    monkeypatch.setenv("LLM_PROVIDER", "ollama")
+    monkeypatch.setenv("LLM_MODEL", "qwen2.5:7b")
+    monkeypatch.setenv("LLM_API_KEY", "ollama")
+
+    captured: dict[str, Any] = {}
+    chunks = [
+        {"message": {"role": "assistant", "content": "hel"}},
+        {"message": {"content": "lo"}},
+        {
+            "message": {
+                "content": "",
+                "tool_calls": [
+                    {"function": {"name": "bash", "arguments": {"cmd": "ls"}}}
+                ],
+            }
+        },
+        {"done": True},
+    ]
+
+    class FakeStream:
+        def raise_for_status(self) -> None:
+            pass
+
+        async def aiter_lines(self):
+            for c in chunks:
+                yield json.dumps(c)
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args: object) -> None:
+            pass
+
+    class FakeClient:
+        def __init__(self, timeout: int) -> None:
+            captured["timeout"] = timeout
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args: object) -> None:
+            pass
+
+        def stream(self, method: str, url: str, json: dict[str, Any]) -> FakeStream:
+            captured.update({"method": method, "url": url, "json": json})
+            return FakeStream()
+
+    monkeypatch.setattr("llm.httpx.AsyncClient", FakeClient)
+
+    deltas: list[str] = []
+
+    async def main() -> dict[str, Any]:
+        return await llm.achat_stream(
+            [{"role": "user", "content": "hi"}],
+            tools=[{"type": "function"}],
+            on_token=deltas.append,
+        )
+
+    result = asyncio.run(main())
+    assert result["content"] == "hello"
+    assert result["tool_calls"][0]["function"]["arguments"] == '{"cmd": "ls"}'
+    assert result["tool_calls"][0]["id"] == "call_0"
+    assert deltas == ["hel", "lo"]
+    assert captured["method"] == "POST"
+    assert captured["url"] == "http://127.0.0.1:11434/api/chat"
+    assert captured["json"]["stream"] is True
 
 
 def test_ollama_native_path_translates_tool_calls(monkeypatch) -> None:

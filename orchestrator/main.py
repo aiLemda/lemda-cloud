@@ -62,12 +62,16 @@ async def agent_run_stream(req: AgentRunRequest) -> StreamingResponse:
         raise HTTPException(status_code=422, detail="task must not be empty")
     queue: asyncio.Queue[dict | None] = asyncio.Queue()
 
+    def emit_answer_token(delta: str) -> None:
+        queue.put_nowait({"event": "answer_token", "data": {"delta": delta}})
+
     async def run() -> None:
         try:
             result = await run_agent(
                 req.task,
                 on_step=lambda step: queue.put_nowait({"event": "step", "data": step}),
                 history=req.history,
+                on_answer_token=emit_answer_token,
             )
             queue.put_nowait({"event": "result", "data": result})
         except Exception as e:  # noqa: BLE001 - keep the stream alive and tell the client

@@ -1,5 +1,6 @@
 import asyncio
 import json
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -13,19 +14,7 @@ ENV_FILE = REPO_ROOT / "infra" / ".env"
 OLLAMA_BASE_URL = "http://127.0.0.1:11434"
 
 
-def _ollama_completion(
-    messages: list[dict[str, Any]],
-    tools: list[dict[str, Any]] | None,
-    timeout_s: int,
-    model: str,
-) -> dict[str, Any]:
-    """Talk to a local Ollama server directly.
-
-    litellm's Ollama integration drops tool results, so the model never sees
-    command output and re-issues the same tool call forever. Ollama's native
-    /api/chat handles the conversation correctly, so we bypass litellm for
-    local models.
-    """
+def _to_ollama_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     ollama_messages: list[dict[str, Any]] = []
     for m in messages:
         role = m.get("role")
@@ -46,10 +35,25 @@ def _ollama_completion(
                 )
             msg["tool_calls"] = calls
         ollama_messages.append(msg)
+    return ollama_messages
 
+
+def _ollama_completion(
+    messages: list[dict[str, Any]],
+    tools: list[dict[str, Any]] | None,
+    timeout_s: int,
+    model: str,
+) -> dict[str, Any]:
+    """Talk to a local Ollama server directly.
+
+    litellm's Ollama integration drops tool results, so the model never sees
+    command output and re-issues the same tool call forever. Ollama's native
+    /api/chat handles the conversation correctly, so we bypass litellm for
+    local models.
+    """
     body: dict[str, Any] = {
         "model": model,
-        "messages": ollama_messages,
+        "messages": _to_ollama_messages(messages),
         "stream": False,
     }
     if tools:
@@ -62,6 +66,57 @@ def _ollama_completion(
         "content": message.get("content") or "",
     }
     tool_calls = message.get("tool_calls")
+    if tool_calls:
+        result["tool_calls"] = [
+            {
+                "id": f"call_{i}",
+                "type": "function",
+                "function": {
+                    "name": tc["function"]["name"],
+                    "arguments": json.dumps(tc["function"]["arguments"]),
+                },
+            }
+            for i, tc in enumerate(tool_calls)
+        ]
+    return result
+
+
+async def _ollama_achat_stream(
+    messages: list[dict[str, Any]],
+    tools: list[dict[str, Any]] | None,
+    timeout_s: int,
+    model: str,
+    on_token: Callable[[str], None] | None,
+) -> dict[str, Any]:
+    """Streaming /api/chat: content deltas arrive via on_token as they are
+    generated; tool_calls are collected from the final chunk."""
+    body: dict[str, Any] = {
+        "model": model,
+        "messages": _to_ollama_messages(messages),
+        "stream": True,
+    }
+    if tools:
+        body["tools"] = tools
+    content = ""
+    tool_calls = None
+    async with (
+        httpx.AsyncClient(timeout=timeout_s) as client,
+        client.stream("POST", f"{OLLAMA_BASE_URL}/api/chat", json=body) as resp,
+    ):
+        resp.raise_for_status()
+        async for line in resp.aiter_lines():
+            if not line.strip():
+                continue
+            chunk = json.loads(line)
+            msg = chunk.get("message") or {}
+            delta = msg.get("content") or ""
+            if delta:
+                content += delta
+                if on_token:
+                    on_token(delta)
+            if msg.get("tool_calls"):
+                tool_calls = msg["tool_calls"]
+    result: dict[str, Any] = {"role": "assistant", "content": content}
     if tool_calls:
         result["tool_calls"] = [
             {
@@ -164,3 +219,27 @@ async def achat(
     timeout_s: int = 120,
 ) -> dict[str, Any]:
     return await asyncio.to_thread(chat, messages, tools, timeout_s)
+
+
+async def achat_stream(
+    messages: list[dict[str, Any]],
+    tools: list[dict[str, Any]] | None = None,
+    timeout_s: int = 120,
+    on_token: Callable[[str], None] | None = None,
+) -> dict[str, Any]:
+    """Like achat, but content deltas are pushed to on_token as they arrive.
+
+    Ollama streams natively; other providers fall back to a full response
+    delivered as a single token (the key check lives in chat).
+    """
+    settings = LLMSettings()
+    if settings.llm_provider == "ollama":
+        return await _ollama_achat_stream(
+            messages, tools, timeout_s, settings.llm_model, on_token
+        )
+    result = await achat(messages, tools, timeout_s)
+    if on_token:
+        content = result.get("content")
+        if content:
+            on_token(content)
+    return result

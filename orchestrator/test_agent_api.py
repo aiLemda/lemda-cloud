@@ -33,7 +33,7 @@ def test_agent_run_rejects_empty_task() -> None:
 
 def test_agent_run_stream_emits_steps(monkeypatch) -> None:
     async def fake_run(
-        task: str, max_steps: int = 10, on_step=None, history=None
+        task: str, max_steps: int = 10, on_step=None, history=None, on_answer_token=None
     ) -> dict:
         for n in (1, 2):
             if on_step:
@@ -61,6 +61,25 @@ def test_agent_run_stream_emits_steps(monkeypatch) -> None:
     assert '"cmd": "echo 2"' in body
     assert "event: result" in body
     assert '"answer": "done"' in body
+
+
+def test_agent_run_stream_emits_answer_tokens(monkeypatch) -> None:
+    async def fake_run(
+        task: str, max_steps: int = 10, on_step=None, history=None, on_answer_token=None
+    ) -> dict:
+        if on_answer_token:
+            on_answer_token("<answer>hel")
+            on_answer_token("lo</answer>")
+        return {"ok": True, "answer": "hello", "steps": []}
+
+    monkeypatch.setattr("main.run_agent", fake_run)
+    client = TestClient(app)
+    with client.stream("POST", "/agent/run/stream", json={"task": "hi"}) as resp:
+        assert resp.status_code == 200
+        body = "".join(resp.iter_text())
+    assert body.count("event: answer_token") == 2
+    assert '"delta": "lo</answer>"' in body
+    assert "event: result" in body
 
 
 def test_agent_run_forwards_history(monkeypatch) -> None:

@@ -50,6 +50,7 @@ export async function streamAgent(
   task: string,
   onStep: (step: ToolStep) => void,
   history?: { role: "user" | "assistant"; content: string }[],
+  onAnswerToken?: (delta: string) => void,
 ): Promise<AgentRunResponse> {
   let res: Response;
   try {
@@ -89,6 +90,8 @@ export async function streamAgent(
       if (event === "step") {
         steps.push(payload as ToolStep);
         onStep(payload as ToolStep);
+      } else if (event === "answer_token") {
+        onAnswerToken?.((payload as { delta: string }).delta);
       } else if (event === "result") {
         return payload as AgentRunResponse;
       } else if (event === "error") {
