@@ -2,6 +2,7 @@ import { serve } from "bun";
 import index from "./index.html";
 
 const ORCHESTRATOR_URL = process.env.BUN_ORCHESTRATOR_URL ?? "http://127.0.0.1:8000";
+const GATEWAY_URL = process.env.BUN_GATEWAY_URL ?? "http://127.0.0.1:8080";
 
 const server = serve({
   routes: {
@@ -54,6 +55,26 @@ const server = serve({
       } catch (err) {
         return Response.json(
           { ok: false, error: `orchestrator unreachable: ${err}`, steps: [] },
+          { status: 502 },
+        );
+      }
+    },
+
+    "/api/sessions/stats": async () => {
+      try {
+        const res = await fetch(`${GATEWAY_URL}/sessions/stats`);
+        return new Response(res.body, {
+          status: res.status,
+          headers: { "content-type": "application/json" },
+        });
+      } catch (err) {
+        return Response.json(
+          {
+            live_sessions: null,
+            max_sessions: null,
+            live_containers: null,
+            stale_containers: null,
+          },
           { status: 502 },
         );
       }

@@ -1,4 +1,33 @@
-import type { AgentRunResponse, HealthResponse, ToolStep } from "./agent";
+import type {
+  AgentRunResponse,
+  HealthResponse,
+  SessionStats,
+  ToolStep,
+} from "./agent";
+
+export async function checkHealth(): Promise<HealthResponse> {
+  let res: Response;
+  try {
+    res = await fetch("/api/health");
+  } catch {
+    return { status: "down" };
+  }
+  if (!res.ok) return { status: "down" };
+  return (await res.json()) as HealthResponse;
+}
+
+export async function fetchSessionStats(): Promise<SessionStats> {
+  let res: Response;
+  try {
+    res = await fetch("/api/sessions/stats");
+  } catch {
+    return { live_sessions: null, max_sessions: null, live_containers: null, stale_containers: null };
+  }
+  if (!res.ok) {
+    return { live_sessions: null, max_sessions: null, live_containers: null, stale_containers: null };
+  }
+  return (await res.json()) as SessionStats;
+}
 
 export async function runAgent(task: string): Promise<AgentRunResponse> {
   let res: Response;
@@ -67,13 +96,4 @@ export async function streamAgent(
     }
   }
   return { ok: false, error: "stream ended without a result", steps };
-}
-
-export async function checkHealth(): Promise<HealthResponse> {
-  try {
-    const res = await fetch("/api/health");
-    return (await res.json()) as HealthResponse;
-  } catch {
-    return { status: "down" };
-  }
 }

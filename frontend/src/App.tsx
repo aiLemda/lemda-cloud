@@ -4,7 +4,7 @@ import "./index.css";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { checkHealth } from "@/lib/client";
+import { checkHealth, fetchSessionStats } from "@/lib/client";
 import { useChat } from "@/lib/use-chat";
 import { cn } from "@/lib/utils";
 import { TraceViewer } from "@/components/trace-viewer";
@@ -14,11 +14,20 @@ export function App() {
   const { messages, state, answer, steps, error, submit } = useChat();
   const [task, setTask] = useState("");
   const [online, setOnline] = useState<boolean | null>(null);
+  const [sessions, setSessions] = useState<number | null>(null);
   const [view, setView] = useState<"chat" | "debug">("chat");
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     checkHealth().then(h => setOnline(h.status === "ok"));
+  }, []);
+
+  useEffect(() => {
+    const refresh = () =>
+      fetchSessionStats().then(s => setSessions(s.live_sessions));
+    refresh();
+    const timer = setInterval(refresh, 5000);
+    return () => clearInterval(timer);
   }, []);
 
   useEffect(() => {
@@ -57,6 +66,15 @@ export function App() {
               debug
             </button>
           </div>
+          <span
+            title="live sandbox sessions / capacity"
+            className={cn(
+              "flex items-center gap-1 text-xs font-medium",
+              sessions === null ? "text-muted-foreground" : "text-amber-600",
+            )}
+          >
+            🐳 {sessions ?? "?"} sandboxes
+          </span>
           <span
             className={cn(
               "flex items-center gap-1.5 text-xs font-medium",

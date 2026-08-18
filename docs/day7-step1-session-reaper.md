@@ -36,16 +36,22 @@ No Python/frontend changes - the orchestrator API is untouched.
 2. TTL: gateway started with `SANDBOX_SESSION_TTL_SECS=5 SANDBOX_REAP_INTERVAL_SECS=2`; 4 execs 3s apart kept the session alive (touch works); after 5s idle the container vanished and exec -> 404.
 3. Regression with defaults (900s TTL): full streaming agent run ("create /tmp/ok.txt, read it back") - 2 live steps + correct answer, session closed by the orchestrator as usual.
 
-## Follow-up (same day): fleet health endpoint
+## Follow-up (same day): fleet health endpoint + capacity cap + UI chip
 
-7. `GET /sessions/stats` (`stats_handler`, line ~230) - `{"live_sessions": N, "live_containers": M, "stale_containers": K}`: map size + best-effort docker counts (`docker ps -a --filter name=sandbox-session-`); docker counts are `null` when docker is unreachable. Two new unit tests (`stats_reflects_live_sessions`, `stats_zero_when_no_sessions`); `cargo test`: 17 passed.
+7. `GET /sessions/stats` (`stats_handler`) - `{"live_sessions": N, "max_sessions": M, "live_containers": K, "stale_containers": L}`: map size + capacity + best-effort docker counts; docker counts `null` when docker unreachable.
+8. Fleet cap: `SANDBOX_MAX_SESSIONS` (default 8); creation past the cap -> `429 session capacity reached (N live sessions) - retry later`. Checked before any docker work, so a runaway agent loop can't exhaust the host.
+9. UI: bridge route `/api/sessions/stats` (`frontend/src/index.ts`, `BUN_GATEWAY_URL` default `http://127.0.0.1:8080`), `fetchSessionStats()` in `client.ts`, `SessionStats` type, and a live `🐳 N sandboxes` chip in the App header polling every 5s.
 
-Live-verified: 2 sessions -> `2/2/0`, delete one -> `1/1/0`, delete other -> `0/0/0`.
+Tests: `capacity_respected`, `max_sessions_env_override`, stats assert `max_sessions`; `cargo test`: 19 passed. Live-verified: cap=3 -> 3 creates 200, 4th 429, stats `3/3/3/0`; cleanup -> `0/3/0/0`; default restart -> `0/8`; bridge + full agent run green.
 
 ## Files touched
 
-- `sandbox-gateway/src/sessions.rs` (+110/-10 lines)
+- `sandbox-gateway/src/sessions.rs` (+130/-15 lines)
 - `sandbox-gateway/src/lib.rs` (+8 lines, reaper + stats wiring)
+- `frontend/src/index.ts` (+15 lines, stats bridge route)
+- `frontend/src/lib/agent.ts` (+8 lines, `SessionStats`)
+- `frontend/src/lib/client.ts` (+24 lines, `fetchSessionStats`)
+- `frontend/src/App.tsx` (+17 lines, live sandbox chip)
 
 ## Next
 

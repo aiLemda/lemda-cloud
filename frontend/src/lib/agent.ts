@@ -23,3 +23,10 @@ export type HealthResponse = {
   status: string;
   service?: string;
 };
+
+export type SessionStats = {
+  live_sessions: number | null;
+  max_sessions: number | null;
+  live_containers: number | null;
+  stale_containers: number | null;
+};

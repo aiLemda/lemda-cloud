@@ -38,12 +38,31 @@ fn default_reap_interval() -> Duration {
     Duration::from_secs(30)
 }
 
+fn default_max_sessions() -> usize {
+    8
+}
+
 fn env_duration(name: &str, default: Duration) -> Duration {
     std::env::var(name)
         .ok()
         .and_then(|v| v.parse::<u64>().ok())
         .map(Duration::from_secs)
         .unwrap_or(default)
+}
+
+fn env_usize(name: &str, default: usize) -> usize {
+    std::env::var(name)
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(default)
+}
+
+fn max_sessions() -> usize {
+    env_usize("SANDBOX_MAX_SESSIONS", default_max_sessions())
+}
+
+fn at_capacity(session_count: usize, cap: usize) -> bool {
+    session_count >= cap
 }
 
 #[derive(Debug, Deserialize)]
@@ -153,6 +172,7 @@ async fn reap_pass(sessions: &Sessions, ttl: Duration) {
 #[derive(Debug, Serialize)]
 pub struct SessionStats {
     pub live_sessions: usize,
+    pub max_sessions: usize,
     /// Best-effort docker counts; None when docker is unreachable.
     pub live_containers: Option<usize>,
     pub stale_containers: Option<usize>,
@@ -166,6 +186,7 @@ pub async fn stats_handler(State(sessions): State<Sessions>) -> Json<SessionStat
         docker_session_counts(&sessions).await.unwrap_or((None, None));
     Json(SessionStats {
         live_sessions,
+        max_sessions: max_sessions(),
         live_containers,
         stale_containers,
     })
@@ -226,6 +247,13 @@ pub async fn create_session_handler(
     State(sessions): State<Sessions>,
     Json(req): Json<SessionCreateRequest>,
 ) -> Result<Json<SessionCreateResponse>, (StatusCode, String)> {
+    let cap = max_sessions();
+    if at_capacity(sessions.lock().await.len(), cap) {
+        return Err((
+            StatusCode::TOO_MANY_REQUESTS,
+            format!("session capacity reached ({cap} live sessions) - retry later"),
+        ));
+    }
     let session_id = unique_session_id();
     let container_name = format!("{CONTAINER_PREFIX}{session_id}");
 
@@ -452,6 +480,26 @@ mod tests {
         );
         let stats = stats_handler(State(sessions)).await;
         assert_eq!(stats.live_sessions, 1);
+        assert_eq!(stats.max_sessions, default_max_sessions());
+    }
+
+    #[test]
+    fn capacity_respected() {
+        assert!(!at_capacity(0, 8));
+        assert!(!at_capacity(7, 8));
+        assert!(at_capacity(8, 8));
+        assert!(at_capacity(9, 8));
+    }
+
+    #[test]
+    fn max_sessions_env_override() {
+        let before = std::env::var("SANDBOX_MAX_SESSIONS").ok();
+        unsafe { std::env::set_var("SANDBOX_MAX_SESSIONS", "3") };
+        assert_eq!(max_sessions(), 3);
+        match before {
+            Some(v) => unsafe { std::env::set_var("SANDBOX_MAX_SESSIONS", v) },
+            None => unsafe { std::env::remove_var("SANDBOX_MAX_SESSIONS") },
+        }
     }
 
     #[tokio::test]
