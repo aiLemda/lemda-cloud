@@ -38,7 +38,7 @@ def llm_ping() -> dict[str, str]:
 @app.post("/sandbox/exec")
 async def sandbox_exec_endpoint(req: ExecRequest) -> dict:
     try:
-        return await sandbox_exec(req.cmd, req.image, req.timeout_s)
+        return await sandbox_exec(req.cmd, image=req.image, timeout_s=req.timeout_s)
     except HTTPError as e:
         raise HTTPException(status_code=502, detail=f"gateway call failed: {e}")
 
