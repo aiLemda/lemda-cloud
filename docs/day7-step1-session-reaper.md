@@ -41,13 +41,14 @@ No Python/frontend changes - the orchestrator API is untouched.
 7. `GET /sessions/stats` (`stats_handler`) - `{"live_sessions": N, "max_sessions": M, "live_containers": K, "stale_containers": L}`: map size + capacity + best-effort docker counts; docker counts `null` when docker unreachable.
 8. Fleet cap: `SANDBOX_MAX_SESSIONS` (default 8); creation past the cap -> `429 session capacity reached (N live sessions) - retry later`. Checked before any docker work, so a runaway agent loop can't exhaust the host.
 9. UI: bridge route `/api/sessions/stats` (`frontend/src/index.ts`, `BUN_GATEWAY_URL` default `http://127.0.0.1:8080`), `fetchSessionStats()` in `client.ts`, `SessionStats` type, and a live `🐳 N sandboxes` chip in the App header polling every 5s.
+10. `GET /sessions` (`list_sessions_handler`) - debug listing of every live session: `session_id`, `idle_seconds`, `container`, sorted by id. Two new tests (idle reporting, sorting/empty); `cargo test`: 21 passed.
 
-Tests: `capacity_respected`, `max_sessions_env_override`, stats assert `max_sessions`; `cargo test`: 19 passed. Live-verified: cap=3 -> 3 creates 200, 4th 429, stats `3/3/3/0`; cleanup -> `0/3/0/0`; default restart -> `0/8`; bridge + full agent run green.
+Live-verified: cap=3 -> 3 creates 200, 4th 429, stats `3/3/3/0`; cleanup -> `0/3/0/0`; list shows idle seconds then `[]` after deletes; default restart -> `0/8`; bridge + full streamed agent runs green; zero leftover containers after every run.
 
 ## Files touched
 
-- `sandbox-gateway/src/sessions.rs` (+130/-15 lines)
-- `sandbox-gateway/src/lib.rs` (+8 lines, reaper + stats wiring)
+- `sandbox-gateway/src/sessions.rs` (+170/-15 lines)
+- `sandbox-gateway/src/lib.rs` (+10 lines, reaper + stats + list wiring)
 - `frontend/src/index.ts` (+15 lines, stats bridge route)
 - `frontend/src/lib/agent.ts` (+8 lines, `SessionStats`)
 - `frontend/src/lib/client.ts` (+24 lines, `fetchSessionStats`)

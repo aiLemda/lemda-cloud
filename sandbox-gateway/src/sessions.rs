@@ -178,6 +178,31 @@ pub struct SessionStats {
     pub stale_containers: Option<usize>,
 }
 
+#[derive(Debug, Serialize)]
+pub struct SessionInfo {
+    pub session_id: String,
+    pub idle_seconds: u64,
+    pub container: String,
+}
+
+/// Debug listing: every live session with its idle time and container.
+pub async fn list_sessions_handler(State(sessions): State<Sessions>) -> Json<Vec<SessionInfo>> {
+    let now = Instant::now();
+    let mut info: Vec<SessionInfo> = {
+        let guard = sessions.lock().await;
+        guard
+            .iter()
+            .map(|(id, entry)| SessionInfo {
+                session_id: id.clone(),
+                idle_seconds: now.duration_since(entry.last_used).as_secs(),
+                container: entry.container.clone(),
+            })
+            .collect()
+    };
+    info.sort_by(|a, b| a.session_id.cmp(&b.session_id));
+    Json(info)
+}
+
 /// Fleet health: how many sessions the map manages, how many containers
 /// exist on the host, and how many of those are not managed (stale).
 pub async fn stats_handler(State(sessions): State<Sessions>) -> Json<SessionStats> {
@@ -507,6 +532,46 @@ mod tests {
         let sessions: Sessions = Arc::new(Mutex::new(HashMap::new()));
         let stats = stats_handler(State(sessions)).await;
         assert_eq!(stats.live_sessions, 0);
+    }
+
+    #[tokio::test]
+    async fn list_shows_idle_seconds() {
+        let sessions: Sessions = Arc::new(Mutex::new(HashMap::new()));
+        sessions.lock().await.insert(
+            "abc".to_string(),
+            SessionEntry {
+                container: "sandbox-session-abc".to_string(),
+                last_used: Instant::now() - Duration::from_secs(42),
+            },
+        );
+        let listed = list_sessions_handler(State(sessions)).await;
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].session_id, "abc");
+        assert_eq!(listed[0].container, "sandbox-session-abc");
+        assert_eq!(listed[0].idle_seconds, 42);
+    }
+
+    #[tokio::test]
+    async fn list_sorted_and_empty() {
+        let sessions: Sessions = Arc::new(Mutex::new(HashMap::new()));
+        sessions.lock().await.insert(
+            "b".to_string(),
+            SessionEntry {
+                container: "c-b".to_string(),
+                last_used: Instant::now(),
+            },
+        );
+        sessions.lock().await.insert(
+            "a".to_string(),
+            SessionEntry {
+                container: "c-a".to_string(),
+                last_used: Instant::now(),
+            },
+        );
+        let listed = list_sessions_handler(State(sessions)).await;
+        assert_eq!(listed[0].session_id, "a");
+        assert_eq!(listed[1].session_id, "b");
+        assert_eq!(list_sessions_handler(State(Arc::new(Mutex::new(HashMap::new())))).await.len(), 0);
     }
 
     #[test]
