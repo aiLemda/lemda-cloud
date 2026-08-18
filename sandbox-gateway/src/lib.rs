@@ -18,6 +18,7 @@ pub fn app() -> Router {
         .route("/healthz", get(healthz))
         .route("/exec", post(exec_handler))
         .route("/sessions", post(sessions::create_session_handler))
+        .route("/sessions/stats", get(sessions::stats_handler))
         .route(
             "/sessions/{session_id}/exec",
             post(sessions::exec_in_session_handler),

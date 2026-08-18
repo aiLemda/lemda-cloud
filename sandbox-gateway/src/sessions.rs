@@ -150,6 +150,59 @@ async fn reap_pass(sessions: &Sessions, ttl: Duration) {
     }
 }
 
+#[derive(Debug, Serialize)]
+pub struct SessionStats {
+    pub live_sessions: usize,
+    /// Best-effort docker counts; None when docker is unreachable.
+    pub live_containers: Option<usize>,
+    pub stale_containers: Option<usize>,
+}
+
+/// Fleet health: how many sessions the map manages, how many containers
+/// exist on the host, and how many of those are not managed (stale).
+pub async fn stats_handler(State(sessions): State<Sessions>) -> Json<SessionStats> {
+    let live_sessions = sessions.lock().await.len();
+    let (live_containers, stale_containers) =
+        docker_session_counts(&sessions).await.unwrap_or((None, None));
+    Json(SessionStats {
+        live_sessions,
+        live_containers,
+        stale_containers,
+    })
+}
+
+async fn docker_session_counts(sessions: &Sessions) -> Option<(Option<usize>, Option<usize>)> {
+    let managed: HashSet<String> = {
+        let guard = sessions.lock().await;
+        guard.values().map(|entry| entry.container.clone()).collect()
+    };
+    let output = Command::new("docker")
+        .args([
+            "ps",
+            "-a",
+            "--filter",
+            &format!("name={CONTAINER_PREFIX}"),
+            "--format",
+            "{{.Names}}",
+        ])
+        .output()
+        .await
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let names: Vec<String> = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .map(str::to_string)
+        .collect();
+    Some((
+        Some(names.len()),
+        Some(names.iter().filter(|name| !managed.contains(*name)).count()),
+    ))
+}
+
 /// Background loop that keeps the container fleet clean. Spawned once from
 /// `app()`; configurable via SANDBOX_SESSION_TTL_SECS (default 900) and
 /// SANDBOX_REAP_INTERVAL_SECS (default 30).
@@ -385,6 +438,27 @@ mod tests {
     #[test]
     fn expired_ids_empty_for_empty_map() {
         assert!(expired_ids(&HashMap::new(), Duration::from_secs(30)).is_empty());
+    }
+
+    #[tokio::test]
+    async fn stats_reflects_live_sessions() {
+        let sessions: Sessions = Arc::new(Mutex::new(HashMap::new()));
+        sessions.lock().await.insert(
+            "abc".to_string(),
+            SessionEntry {
+                container: "sandbox-session-abc".to_string(),
+                last_used: Instant::now(),
+            },
+        );
+        let stats = stats_handler(State(sessions)).await;
+        assert_eq!(stats.live_sessions, 1);
+    }
+
+    #[tokio::test]
+    async fn stats_zero_when_no_sessions() {
+        let sessions: Sessions = Arc::new(Mutex::new(HashMap::new()));
+        let stats = stats_handler(State(sessions)).await;
+        assert_eq!(stats.live_sessions, 0);
     }
 
     #[test]

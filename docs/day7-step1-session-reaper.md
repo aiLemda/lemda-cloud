@@ -36,10 +36,16 @@ No Python/frontend changes - the orchestrator API is untouched.
 2. TTL: gateway started with `SANDBOX_SESSION_TTL_SECS=5 SANDBOX_REAP_INTERVAL_SECS=2`; 4 execs 3s apart kept the session alive (touch works); after 5s idle the container vanished and exec -> 404.
 3. Regression with defaults (900s TTL): full streaming agent run ("create /tmp/ok.txt, read it back") - 2 live steps + correct answer, session closed by the orchestrator as usual.
 
+## Follow-up (same day): fleet health endpoint
+
+7. `GET /sessions/stats` (`stats_handler`, line ~230) - `{"live_sessions": N, "live_containers": M, "stale_containers": K}`: map size + best-effort docker counts (`docker ps -a --filter name=sandbox-session-`); docker counts are `null` when docker is unreachable. Two new unit tests (`stats_reflects_live_sessions`, `stats_zero_when_no_sessions`); `cargo test`: 17 passed.
+
+Live-verified: 2 sessions -> `2/2/0`, delete one -> `1/1/0`, delete other -> `0/0/0`.
+
 ## Files touched
 
-- `sandbox-gateway/src/sessions.rs` (+90/-10 lines)
-- `sandbox-gateway/src/lib.rs` (+6 lines, reaper wiring)
+- `sandbox-gateway/src/sessions.rs` (+110/-10 lines)
+- `sandbox-gateway/src/lib.rs` (+8 lines, reaper + stats wiring)
 
 ## Next
 
