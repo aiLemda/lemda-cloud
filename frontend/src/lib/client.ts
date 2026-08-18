@@ -1,4 +1,4 @@
-import type { AgentRunResponse, HealthResponse } from "./agent";
+import type { AgentRunResponse, HealthResponse, ToolStep } from "./agent";
 
 export async function runAgent(task: string): Promise<AgentRunResponse> {
   let res: Response;
@@ -15,6 +15,58 @@ export async function runAgent(task: string): Promise<AgentRunResponse> {
     return { ok: false, error: `server error ${res.status}: ${await res.text()}`, steps: [] };
   }
   return (await res.json()) as AgentRunResponse;
+}
+
+export async function streamAgent(
+  task: string,
+  onStep: (step: ToolStep) => void,
+): Promise<AgentRunResponse> {
+  let res: Response;
+  try {
+    res = await fetch("/api/agent/run/stream", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ task }),
+    });
+  } catch (err) {
+    return { ok: false, error: `network error: ${err}`, steps: [] };
+  }
+  if (!res.ok || !res.body) {
+    return { ok: false, error: `server error ${res.status}: ${await res.text()}`, steps: [] };
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  const steps: ToolStep[] = [];
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    const blocks = buffer.split("\n\n");
+    buffer = blocks.pop() ?? "";
+    for (const block of blocks) {
+      let event = "message";
+      let data = "";
+      for (const line of block.split("\n")) {
+        if (line.startsWith("event:")) event = line.slice(6).trim();
+        if (line.startsWith("data:")) data += line.slice(5).trim();
+      }
+      if (!data) continue;
+      const payload = JSON.parse(data);
+      if (event === "step") {
+        steps.push(payload as ToolStep);
+        onStep(payload as ToolStep);
+      } else if (event === "result") {
+        return payload as AgentRunResponse;
+      } else if (event === "error") {
+        return { ok: false, error: payload.error as string, steps };
+      }
+    }
+  }
+  return { ok: false, error: "stream ended without a result", steps };
 }
 
 export async function checkHealth(): Promise<HealthResponse> {

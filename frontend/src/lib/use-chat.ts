@@ -1,7 +1,7 @@
 import { useCallback, useState } from "react";
 
 import type { ToolStep } from "./agent";
-import { runAgent } from "./client";
+import { streamAgent } from "./client";
 
 export type ChatMessage = {
   role: "user" | "agent";
@@ -26,7 +26,9 @@ export function useChat() {
       setAnswer("");
       setSteps([]);
       setError("");
-      const res = await runAgent(trimmed);
+      const res = await streamAgent(trimmed, step =>
+        setSteps(prev => [...prev, step]),
+      );
       setMessages(prev => [...prev, { role: "agent", content: res.answer ?? res.error ?? "" }]);
       if (res.ok) {
         setAnswer(res.answer ?? "");

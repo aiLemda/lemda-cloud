@@ -1,5 +1,6 @@
 import json
 import re
+from collections.abc import Callable
 from typing import Any
 
 import llm
@@ -45,7 +46,11 @@ def _summarize(result: dict[str, Any]) -> str:
     return f"exit_code={result.get('exit_code')} (no output)"
 
 
-async def run_agent(task: str, max_steps: int = MAX_STEPS) -> dict[str, Any]:
+async def run_agent(
+    task: str,
+    max_steps: int = MAX_STEPS,
+    on_step: Callable[[dict[str, Any]], None] | None = None,
+) -> dict[str, Any]:
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": task},
@@ -79,6 +84,8 @@ async def run_agent(task: str, max_steps: int = MAX_STEPS) -> dict[str, Any]:
                 else:
                     result = await sandbox.sandbox_exec(cmd)
                 steps.append({"type": "tool", "cmd": cmd, "result": result})
+                if on_step:
+                    on_step({"type": "tool", "cmd": cmd, "result": result})
                 messages.append(
                     {
                         "role": "tool",
@@ -93,6 +100,8 @@ async def run_agent(task: str, max_steps: int = MAX_STEPS) -> dict[str, Any]:
             cmd = bash_matches[-1].strip()
             result = await sandbox.sandbox_exec(cmd)
             steps.append({"type": "tool", "cmd": cmd, "result": result})
+            if on_step:
+                on_step({"type": "tool", "cmd": cmd, "result": result})
             messages.append(
                 {"role": "user", "content": f"command output:\n{_summarize(result)}"}
             )

@@ -36,6 +36,29 @@ const server = serve({
       }
     },
 
+    "/api/agent/run/stream": async req => {
+      try {
+        const res = await fetch(`${ORCHESTRATOR_URL}/agent/run/stream`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: await req.text(),
+        });
+        return new Response(res.body, {
+          status: res.status,
+          headers: {
+            "content-type": "text/event-stream",
+            "cache-control": "no-cache",
+            connection: "keep-alive",
+          },
+        });
+      } catch (err) {
+        return Response.json(
+          { ok: false, error: `orchestrator unreachable: ${err}`, steps: [] },
+          { status: 502 },
+        );
+      }
+    },
+
     "/api/hello": {
       async GET(req) {
         return Response.json({

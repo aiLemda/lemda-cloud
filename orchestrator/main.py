@@ -1,4 +1,8 @@
+import asyncio
+import json
+
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import StreamingResponse
 from httpx import HTTPError
 from pydantic import BaseModel
 
@@ -49,3 +53,33 @@ async def agent_run(req: AgentRunRequest) -> dict:
     if not req.task.strip():
         raise HTTPException(status_code=422, detail="task must not be empty")
     return await run_agent(req.task)
+
+
+@app.post("/agent/run/stream")
+async def agent_run_stream(req: AgentRunRequest) -> StreamingResponse:
+    if not req.task.strip():
+        raise HTTPException(status_code=422, detail="task must not be empty")
+    queue: asyncio.Queue[dict | None] = asyncio.Queue()
+
+    async def run() -> None:
+        try:
+            result = await run_agent(
+                req.task,
+                on_step=lambda step: queue.put_nowait({"event": "step", "data": step}),
+            )
+            queue.put_nowait({"event": "result", "data": result})
+        except Exception as e:  # noqa: BLE001 - keep the stream alive and tell the client
+            queue.put_nowait({"event": "error", "data": {"error": str(e)}})
+        finally:
+            queue.put_nowait(None)
+
+    async def gen():
+        task = asyncio.create_task(run())
+        while True:
+            item = await queue.get()
+            if item is None:
+                break
+            yield f"event: {item['event']}\ndata: {json.dumps(item['data'])}\n\n"
+        await task
+
+    return StreamingResponse(gen(), media_type="text/event-stream")

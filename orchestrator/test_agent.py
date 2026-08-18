@@ -121,5 +121,38 @@ def test_max_steps_guard(monkeypatch) -> None:
     assert len(result["steps"]) == MAX_STEPS
 
 
+def test_on_step_fires_per_tool_step(monkeypatch) -> None:
+    calls = {"n": 0}
+
+    def fake_chat(messages, tools=None, timeout_s=120) -> dict:
+        calls["n"] += 1
+        if calls["n"] <= 2:
+            return _tool_msg(f"echo run {calls['n']}", call_id=f"call_{calls['n']}")
+        return {
+            "role": "assistant",
+            "content": "<answer>all done</answer>",
+            "tool_calls": None,
+        }
+
+    async def fake_exec(cmd, image=None, timeout_s=30) -> dict:
+        return {
+            "exit_code": 0,
+            "stdout": "ok",
+            "stderr": "",
+            "timed_out": False,
+            "duration_ms": 1,
+        }
+
+    streamed: list[dict[str, Any]] = []
+    monkeypatch.setattr("llm.chat", fake_chat)
+    monkeypatch.setattr("sandbox.sandbox_exec", fake_exec)
+    result = asyncio.run(run_agent("run twice", on_step=streamed.append))
+    assert result["ok"] is True
+    assert len(streamed) == 2
+    assert streamed[0]["cmd"] == "echo run 1"
+    assert streamed[1]["cmd"] == "echo run 2"
+    assert streamed[0]["result"]["exit_code"] == 0
+
+
 def run_agent_sync(task: str) -> dict[str, Any]:
     return asyncio.run(run_agent(task))

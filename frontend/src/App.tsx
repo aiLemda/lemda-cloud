@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 
+import "./index.css";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -22,7 +23,7 @@ export function App() {
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [messages, state]);
+  }, [messages, state, steps]);
 
   const onSubmit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -108,9 +109,12 @@ export function App() {
             ))}
 
             {state === "running" && (
-              <div className="flex justify-start">
-                <div className="flex items-center gap-2 rounded-2xl bg-muted px-4 py-2 text-sm text-muted-foreground">
-                  <span className="animate-pulse">🧠 thinking…</span>
+              <div className="flex flex-col gap-3">
+                {steps.length > 0 && <TraceViewer steps={steps} />}
+                <div className="flex justify-start">
+                  <div className="flex items-center gap-2 rounded-2xl bg-muted px-4 py-2 text-sm text-muted-foreground">
+                    <span className="animate-pulse">🧠 thinking…</span>
+                  </div>
                 </div>
               </div>
             )}
