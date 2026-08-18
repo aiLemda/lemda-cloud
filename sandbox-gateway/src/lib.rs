@@ -1,8 +1,9 @@
 mod exec;
+mod sessions;
 
 use axum::extract::Json;
 use axum::http::StatusCode;
-use axum::routing::{get, post};
+use axum::routing::{delete, get, post};
 use axum::Router;
 
 use crate::exec::{ExecRequest, ExecResult};
@@ -11,6 +12,13 @@ pub fn app() -> Router {
     Router::new()
         .route("/healthz", get(healthz))
         .route("/exec", post(exec_handler))
+        .route("/sessions", post(sessions::create_session_handler))
+        .route(
+            "/sessions/{session_id}/exec",
+            post(sessions::exec_in_session_handler),
+        )
+        .route("/sessions/{session_id}", delete(sessions::delete_session_handler))
+        .with_state(sessions::Sessions::default())
 }
 
 async fn healthz() -> &'static str {

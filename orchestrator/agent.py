@@ -51,6 +51,25 @@ async def run_agent(
     max_steps: int = MAX_STEPS,
     on_step: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
+    """Run the agent loop inside one persistent sandbox session.
+
+    The session container is created once, every command runs inside it, and
+    it is removed when the run finishes - so files and installs survive
+    between steps.
+    """
+    session_id = await sandbox.sandbox_create_session()
+    try:
+        return await _run_agent(task, session_id, max_steps, on_step)
+    finally:
+        await sandbox.sandbox_close_session(session_id)
+
+
+async def _run_agent(
+    task: str,
+    session_id: str,
+    max_steps: int = MAX_STEPS,
+    on_step: Callable[[dict[str, Any]], None] | None = None,
+) -> dict[str, Any]:
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": task},
@@ -82,7 +101,7 @@ async def run_agent(
                         "timed_out": False,
                     }
                 else:
-                    result = await sandbox.sandbox_exec(cmd)
+                    result = await sandbox.sandbox_exec(cmd, session_id=session_id)
                 steps.append({"type": "tool", "cmd": cmd, "result": result})
                 if on_step:
                     on_step({"type": "tool", "cmd": cmd, "result": result})
@@ -98,7 +117,7 @@ async def run_agent(
         bash_matches = re.findall(r"<bash>(.*?)</bash>", content, re.DOTALL)
         if bash_matches:
             cmd = bash_matches[-1].strip()
-            result = await sandbox.sandbox_exec(cmd)
+            result = await sandbox.sandbox_exec(cmd, session_id=session_id)
             steps.append({"type": "tool", "cmd": cmd, "result": result})
             if on_step:
                 on_step({"type": "tool", "cmd": cmd, "result": result})

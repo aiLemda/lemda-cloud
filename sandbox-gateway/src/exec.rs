@@ -6,10 +6,10 @@ use tokio::process::Command;
 use tokio::time::timeout;
 
 const MAX_CMD_LEN: usize = 4096;
-const DEFAULT_IMAGE: &str = "python:3.12-slim";
-const EGRESS_PROXY: &str = "http://sandbox-egress:8888";
-const SANDBOX_NET: &str = "sandbox-net";
-const NO_PROXY: &str = "localhost,127.0.0.1";
+pub(crate) const DEFAULT_IMAGE: &str = "python:3.12-slim";
+pub(crate) const EGRESS_PROXY: &str = "http://sandbox-egress:8888";
+pub(crate) const SANDBOX_NET: &str = "sandbox-net";
+pub(crate) const NO_PROXY: &str = "localhost,127.0.0.1";
 
 #[derive(Debug, Deserialize)]
 pub struct ExecRequest {
@@ -20,11 +20,11 @@ pub struct ExecRequest {
     pub timeout_s: u64,
 }
 
-fn default_image() -> String {
+pub(crate) fn default_image() -> String {
     DEFAULT_IMAGE.to_string()
 }
 
-fn default_timeout() -> u64 {
+pub(crate) fn default_timeout() -> u64 {
     30
 }
 
@@ -37,17 +37,21 @@ pub struct ExecResult {
     pub duration_ms: u64,
 }
 
-pub fn validate(req: &ExecRequest) -> Result<(), String> {
-    if req.cmd.trim().is_empty() {
+pub(crate) fn validate_cmd(cmd: &str, timeout_s: u64) -> Result<(), String> {
+    if cmd.trim().is_empty() {
         return Err("cmd must not be empty".to_string());
     }
-    if req.cmd.len() > MAX_CMD_LEN {
+    if cmd.len() > MAX_CMD_LEN {
         return Err(format!("cmd too long (max {MAX_CMD_LEN} chars)"));
     }
-    if !(1..=120).contains(&req.timeout_s) {
+    if !(1..=120).contains(&timeout_s) {
         return Err("timeout_s must be between 1 and 120".to_string());
     }
     Ok(())
+}
+
+pub fn validate(req: &ExecRequest) -> Result<(), String> {
+    validate_cmd(&req.cmd, req.timeout_s)
 }
 
 pub async fn run_exec(req: &ExecRequest) -> ExecResult {
