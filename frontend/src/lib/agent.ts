@@ -30,3 +30,19 @@ export type SessionStats = {
   live_containers: number | null;
   stale_containers: number | null;
 };
+
+export type ChatTurn = {
+  role: "user" | "assistant";
+  content: string;
+};
+
+export type Conversation = {
+  id: string;
+  messages: ChatTurn[];
+};
+
+export type ConversationSummary = {
+  id: string;
+  message_count: number;
+  updated_at: number;
+};

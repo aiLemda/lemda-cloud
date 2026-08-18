@@ -1,5 +1,6 @@
 import asyncio
 import json
+from typing import Literal
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
@@ -7,10 +8,12 @@ from httpx import HTTPError
 from pydantic import BaseModel
 
 from agent import run_agent
+from conversations import ConversationStore
 from llm import LLMSettings, ask_llm
 from sandbox import sandbox_exec
 
 app = FastAPI(title="devin-clone orchestrator", version="0.1.0")
+conversations = ConversationStore()
 
 
 class ExecRequest(BaseModel):
@@ -22,6 +25,11 @@ class ExecRequest(BaseModel):
 class AgentRunRequest(BaseModel):
     task: str
     history: list[dict[str, str]] | None = None
+
+
+class ConversationMessageRequest(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str
 
 
 @app.get("/health")
@@ -47,6 +55,32 @@ async def sandbox_exec_endpoint(req: ExecRequest) -> dict:
 @app.get("/sandbox/ls")
 async def sandbox_ls() -> dict:
     return await sandbox_exec("ls -la /")
+
+
+@app.post("/conversations", status_code=201)
+def create_conversation() -> dict:
+    return conversations.create()
+
+
+@app.get("/conversations")
+def list_conversations() -> list[dict]:
+    return conversations.list()
+
+
+@app.get("/conversations/{cid}")
+def get_conversation(cid: str) -> dict:
+    conv = conversations.get(cid)
+    if conv is None:
+        raise HTTPException(status_code=404, detail="conversation not found")
+    return conv
+
+
+@app.post("/conversations/{cid}/messages")
+def append_conversation_message(cid: str, req: ConversationMessageRequest) -> dict:
+    conv = conversations.append(cid, req.role, req.content)
+    if conv is None:
+        raise HTTPException(status_code=404, detail="conversation not found")
+    return conv
 
 
 @app.post("/agent/run")

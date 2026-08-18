@@ -1,5 +1,8 @@
 import type {
   AgentRunResponse,
+  ChatTurn,
+  Conversation,
+  ConversationSummary,
   HealthResponse,
   SessionStats,
   ToolStep,
@@ -27,6 +30,55 @@ export async function fetchSessionStats(): Promise<SessionStats> {
     return { live_sessions: null, max_sessions: null, live_containers: null, stale_containers: null };
   }
   return (await res.json()) as SessionStats;
+}
+
+export async function createConversation(): Promise<Conversation | null> {
+  try {
+    const res = await fetch("/api/conversations", { method: "POST" });
+    if (!res.ok) return null;
+    return (await res.json()) as Conversation;
+  } catch {
+    return null;
+  }
+}
+
+export async function getConversation(id: string): Promise<Conversation | null> {
+  try {
+    const res = await fetch(`/api/conversations/${id}`);
+    if (!res.ok) return null;
+    return (await res.json()) as Conversation;
+  } catch {
+    return null;
+  }
+}
+
+export async function appendConversationMessage(
+  id: string,
+  role: "user" | "assistant",
+  content: string,
+): Promise<ChatTurn[] | null> {
+  try {
+    const res = await fetch(`/api/conversations/${id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ role, content }),
+    });
+    if (!res.ok) return null;
+    const conv = (await res.json()) as Conversation;
+    return conv.messages;
+  } catch {
+    return null;
+  }
+}
+
+export async function listConversations(): Promise<ConversationSummary[] | null> {
+  try {
+    const res = await fetch("/api/conversations");
+    if (!res.ok) return null;
+    return (await res.json()) as ConversationSummary[];
+  } catch {
+    return null;
+  }
 }
 
 export async function runAgent(task: string): Promise<AgentRunResponse> {

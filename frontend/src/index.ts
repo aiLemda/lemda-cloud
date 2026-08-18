@@ -4,11 +4,30 @@ import index from "./index.html";
 const ORCHESTRATOR_URL = process.env.BUN_ORCHESTRATOR_URL ?? "http://127.0.0.1:8000";
 const GATEWAY_URL = process.env.BUN_GATEWAY_URL ?? "http://127.0.0.1:8080";
 
+async function forwardJson(
+  url: string,
+  method: string,
+  body?: string,
+): Promise<Response> {
+  try {
+    const res = await fetch(url, {
+      method,
+      headers: body ? { "content-type": "application/json" } : undefined,
+      body,
+    });
+    return new Response(res.body, {
+      status: res.status,
+      headers: { "content-type": "application/json" },
+    });
+  } catch (err) {
+    return Response.json({ error: `orchestrator unreachable: ${err}` }, { status: 502 });
+  }
+}
+
 const server = serve({
   routes: {
     // Serve index.html for all unmatched routes.
     "/*": index,
-
     "/api/health": async () => {
       try {
         const res = await fetch(`${ORCHESTRATOR_URL}/health`);
@@ -78,6 +97,27 @@ const server = serve({
           { status: 502 },
         );
       }
+    },
+
+    "/api/conversations": {
+      async POST() {
+        return forwardJson(`${ORCHESTRATOR_URL}/conversations`, "POST");
+      },
+      async GET() {
+        return forwardJson(`${ORCHESTRATOR_URL}/conversations`, "GET");
+      },
+    },
+
+    "/api/conversations/:id": async req => {
+      return forwardJson(`${ORCHESTRATOR_URL}/conversations/${req.params.id}`, "GET");
+    },
+
+    "/api/conversations/:id/messages": async req => {
+      return forwardJson(
+        `${ORCHESTRATOR_URL}/conversations/${req.params.id}/messages`,
+        "POST",
+        await req.text(),
+      );
     },
 
     "/api/hello": {

@@ -11,7 +11,7 @@ import { TraceViewer } from "@/components/trace-viewer";
 import { APITester } from "./APITester";
 
 export function App() {
-  const { messages, state, answer, steps, error, submit } = useChat();
+  const { messages, state, answer, steps, error, submit, reset } = useChat();
   const [task, setTask] = useState("");
   const [online, setOnline] = useState<boolean | null>(null);
   const [sessions, setSessions] = useState<number | null>(null);
@@ -66,6 +66,14 @@ export function App() {
               debug
             </button>
           </div>
+          <button
+            onClick={reset}
+            disabled={state === "running"}
+            title="start a new conversation (the old one stays saved)"
+            className="rounded border px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted"
+          >
+            + new chat
+          </button>
           <span
             title="live sandbox sessions / capacity"
             className={cn(
