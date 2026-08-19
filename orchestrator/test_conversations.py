@@ -61,3 +61,20 @@ def test_list_conversations_newest_first() -> None:
     assert len(entries) >= 2
     assert entries[0]["updated_at"] >= entries[1]["updated_at"]
     assert "message_count" in entries[0]
+    assert "preview" in entries[0]
+
+
+def test_list_shows_first_user_message_as_preview() -> None:
+    cid = client.post("/conversations").json()["id"]
+    client.post(
+        f"/conversations/{cid}/messages",
+        json={"role": "user", "content": "resume this chat"},
+    )
+    client.post(
+        f"/conversations/{cid}/messages",
+        json={"role": "assistant", "content": "ok"},
+    )
+    entries = client.get("/conversations").json()
+    entry = next(e for e in entries if e["id"] == cid)
+    assert entry["preview"] == "resume this chat"
+    assert entry["message_count"] == 2

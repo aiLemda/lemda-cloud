@@ -45,4 +45,5 @@ export type ConversationSummary = {
   id: string;
   message_count: number;
   updated_at: number;
+  preview: string;
 };

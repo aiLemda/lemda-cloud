@@ -43,6 +43,9 @@ class ConversationStore:
                 "id": c["id"],
                 "message_count": len(c["messages"]),
                 "updated_at": c["updated_at"],
+                "preview": next(
+                    (m["content"] for m in c["messages"] if m["role"] == "user"), ""
+                ),
             }
             for c in convs
         ]

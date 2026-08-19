@@ -10,12 +10,22 @@ import { cn } from "@/lib/utils";
 import { TraceViewer } from "@/components/trace-viewer";
 import { APITester } from "./APITester";
 
+function timeAgo(epochSeconds: number): string {
+  const s = Math.floor(Date.now() / 1000) - epochSeconds;
+  if (s < 60) return "just now";
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  return `${Math.floor(s / 86400)}d ago`;
+}
+
 export function App() {
-  const { messages, state, answer, steps, error, submit, reset } = useChat();
+  const { messages, state, answer, steps, error, conversationId, conversations, submit, reset, selectConversation } =
+    useChat();
   const [task, setTask] = useState("");
   const [online, setOnline] = useState<boolean | null>(null);
   const [sessions, setSessions] = useState<number | null>(null);
   const [view, setView] = useState<"chat" | "debug">("chat");
+  const [chatsOpen, setChatsOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -66,11 +76,51 @@ export function App() {
               debug
             </button>
           </div>
+          <div className="relative">
+            <button
+              onClick={() => setChatsOpen(o => !o)}
+              disabled={state === "running"}
+              title="resume a past conversation"
+              className="rounded border px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted disabled:opacity-50"
+            >
+              💬 chats
+            </button>
+            {chatsOpen && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setChatsOpen(false)} />
+                <div className="absolute right-0 z-20 mt-1 max-h-72 w-72 overflow-y-auto rounded-md border bg-background p-1 shadow-lg">
+                  {conversations.length === 0 && (
+                    <p className="px-2 py-2 text-xs text-muted-foreground">no saved chats yet</p>
+                  )}
+                  {conversations.map(c => (
+                    <button
+                      key={c.id}
+                      onClick={() => {
+                        void selectConversation(c.id);
+                        setChatsOpen(false);
+                      }}
+                      className={cn(
+                        "w-full rounded px-2 py-1.5 text-left transition-colors hover:bg-muted",
+                        c.id === conversationId && "bg-muted",
+                      )}
+                    >
+                      <p className="truncate text-xs font-medium">
+                        {c.preview || "(empty chat)"}
+                      </p>
+                      <p className="text-[10px] text-muted-foreground">
+                        {c.message_count} msgs · {timeAgo(c.updated_at)}
+                      </p>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
           <button
             onClick={reset}
             disabled={state === "running"}
             title="start a new conversation (the old one stays saved)"
-            className="rounded border px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted"
+            className="rounded border px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted disabled:opacity-50"
           >
             + new chat
           </button>

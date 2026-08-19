@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 
-import type { ToolStep } from "./agent";
-import { appendConversationMessage, createConversation, getConversation, streamAgent } from "./client";
+import type { ConversationSummary, ToolStep } from "./agent";
+import {
+  appendConversationMessage,
+  createConversation,
+  getConversation,
+  listConversations,
+  streamAgent,
+} from "./client";
 
 export type ChatMessage = {
   role: "user" | "agent";
@@ -19,8 +25,16 @@ export function useChat() {
   const [steps, setSteps] = useState<ToolStep[]>([]);
   const [error, setError] = useState("");
   const [conversationId, setConversationId] = useState<string | null>(null);
+  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+
+  const refreshConversations = useCallback(() => {
+    listConversations().then(list => {
+      if (list) setConversations(list);
+    });
+  }, []);
 
   useEffect(() => {
+    refreshConversations();
     const savedId = localStorage.getItem(CONVERSATION_KEY);
     if (!savedId) return;
     getConversation(savedId).then(conv => {
@@ -36,7 +50,29 @@ export function useChat() {
         localStorage.removeItem(CONVERSATION_KEY);
       }
     });
-  }, []);
+  }, [refreshConversations]);
+
+  const selectConversation = useCallback(
+    async (id: string) => {
+      if (state === "running") return;
+      const conv = await getConversation(id);
+      if (!conv) return;
+      setConversationId(id);
+      localStorage.setItem(CONVERSATION_KEY, id);
+      setMessages(
+        conv.messages.map(m => ({
+          role: m.role === "user" ? "user" : "agent",
+          content: m.content,
+        })),
+      );
+      setState("done");
+      setAnswer("");
+      setSteps([]);
+      setError("");
+      refreshConversations();
+    },
+    [state, refreshConversations],
+  );
 
   const submit = useCallback(
     async (task: string) => {
@@ -58,6 +94,7 @@ export function useChat() {
           convId = conv.id;
           setConversationId(conv.id);
           localStorage.setItem(CONVERSATION_KEY, conv.id);
+          refreshConversations();
         }
       }
       if (convId) {
@@ -95,7 +132,19 @@ export function useChat() {
     setError("");
     setConversationId(null);
     localStorage.removeItem(CONVERSATION_KEY);
-  }, []);
+    refreshConversations();
+  }, [refreshConversations]);
 
-  return { messages, state, answer, steps, error, conversationId, submit, reset };
+  return {
+    messages,
+    state,
+    answer,
+    steps,
+    error,
+    conversationId,
+    conversations,
+    submit,
+    reset,
+    selectConversation,
+  };
 }
