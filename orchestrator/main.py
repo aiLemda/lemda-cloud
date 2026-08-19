@@ -1,5 +1,7 @@
 import asyncio
 import json
+import os
+from contextlib import asynccontextmanager
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException
@@ -12,8 +14,35 @@ from conversations import ConversationStore
 from llm import LLMSettings, ask_llm
 from sandbox import sandbox_exec
 
-app = FastAPI(title="devin-clone orchestrator", version="0.1.0")
-conversations = ConversationStore()
+CONVERSATION_TTL_SECS = float(os.getenv("CONVERSATION_TTL_SECS", "3600"))
+CONVERSATION_REAP_INTERVAL_SECS = float(
+    os.getenv("CONVERSATION_REAP_INTERVAL_SECS", "60")
+)
+
+conversations = ConversationStore(
+    ttl_secs=CONVERSATION_TTL_SECS,
+    reap_interval_secs=CONVERSATION_REAP_INTERVAL_SECS,
+)
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    """Evict idle conversations on a background loop, like the gateway's
+    session reaper."""
+
+    async def reaper_loop() -> None:
+        while True:
+            await asyncio.sleep(conversations.reap_interval)
+            conversations.reap_expired()
+
+    task = asyncio.create_task(reaper_loop())
+    try:
+        yield
+    finally:
+        task.cancel()
+
+
+app = FastAPI(title="devin-clone orchestrator", version="0.1.0", lifespan=lifespan)
 
 
 class ExecRequest(BaseModel):

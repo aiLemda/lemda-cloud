@@ -150,6 +150,10 @@ const server = serve({
     // Echo console logs from the browser to the server
     console: true,
   },
+
+  // Long-running agent streams can sit idle between tool steps (Docker
+  // cold starts, slow models); the 10s default killed mid-run SSE.
+  idleTimeout: 180,
 });
 
 console.log(`🚀 Server running at ${server.url}`);

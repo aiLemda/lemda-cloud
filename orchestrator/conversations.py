@@ -12,12 +12,32 @@ class ConversationStore:
     Conversations keep the full user/assistant message history server-side,
     so the chat survives page reloads (the UI persists the id in
     localStorage and restores from here). Kept in memory on purpose - a
-    restart starts fresh, mirroring the sandbox session model.
+    restart starts fresh, mirroring the sandbox session model. Idle
+    conversations (no writes for `ttl_secs`) are evicted by the reaper.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, ttl_secs: float, reap_interval_secs: float) -> None:
         self._lock = threading.Lock()
         self._conversations: dict[str, dict[str, Any]] = {}
+        self._ttl_secs = ttl_secs
+        self._reap_interval_secs = reap_interval_secs
+
+    @property
+    def reap_interval(self) -> float:
+        return self._reap_interval_secs
+
+    def reap_expired(self) -> int:
+        """Evict conversations idle longer than the TTL; returns how many."""
+        cutoff = time.time() - self._ttl_secs
+        with self._lock:
+            expired = [
+                cid
+                for cid, c in self._conversations.items()
+                if c["updated_at"] < cutoff
+            ]
+            for cid in expired:
+                del self._conversations[cid]
+        return len(expired)
 
     def create(self) -> dict[str, Any]:
         cid = f"conv_{uuid4().hex[:12]}"

@@ -1,5 +1,6 @@
 from fastapi.testclient import TestClient
 
+from conversations import ConversationStore
 from main import app
 
 client = TestClient(app)
@@ -78,3 +79,22 @@ def test_list_shows_first_user_message_as_preview() -> None:
     entry = next(e for e in entries if e["id"] == cid)
     assert entry["preview"] == "resume this chat"
     assert entry["message_count"] == 2
+
+
+def test_reaper_evicts_idle_but_keeps_fresh() -> None:
+    store = ConversationStore(ttl_secs=3600, reap_interval_secs=60)
+    idle = store.create()
+    fresh = store.create()
+    store.append(fresh["id"], "user", "recently active")
+    with store._lock:
+        store._conversations[idle["id"]]["updated_at"] = 0
+    assert store.reap_expired() == 1
+    assert store.get(idle["id"]) is None
+    assert store.get(fresh["id"]) is not None
+
+
+def test_reaper_leaves_everything_fresh_untouched() -> None:
+    store = ConversationStore(ttl_secs=3600, reap_interval_secs=60)
+    store.create()
+    store.create()
+    assert store.reap_expired() == 0
