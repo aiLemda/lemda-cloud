@@ -88,7 +88,7 @@ def test_reaper_evicts_idle_but_keeps_fresh() -> None:
     store.append(fresh["id"], "user", "recently active")
     with store._lock:
         store._conversations[idle["id"]]["updated_at"] = 0
-    assert store.reap_expired() == 1
+    assert store.reap_expired() == [(idle["id"], None)]
     assert store.get(idle["id"]) is None
     assert store.get(fresh["id"]) is not None
 
@@ -97,4 +97,16 @@ def test_reaper_leaves_everything_fresh_untouched() -> None:
     store = ConversationStore(ttl_secs=3600, reap_interval_secs=60)
     store.create()
     store.create()
-    assert store.reap_expired() == 0
+    assert store.reap_expired() == []
+
+
+def test_session_pin_and_reaper_releases_it() -> None:
+    store = ConversationStore(ttl_secs=3600, reap_interval_secs=60)
+    cid = store.create()["id"]
+    assert store.get_session(cid) is None
+    store.set_session(cid, "sess-1")
+    assert store.get_session(cid) == "sess-1"
+    with store._lock:
+        store._conversations[cid]["updated_at"] = 0
+    assert store.reap_expired() == [(cid, "sess-1")]
+    assert store.get_session(cid) is None

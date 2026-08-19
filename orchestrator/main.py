@@ -12,7 +12,12 @@ from pydantic import BaseModel
 from agent import run_agent
 from conversations import ConversationStore
 from llm import LLMSettings, ask_llm
-from sandbox import sandbox_exec
+from sandbox import (
+    sandbox_close_session,
+    sandbox_create_session,
+    sandbox_exec,
+    session_alive,
+)
 
 CONVERSATION_TTL_SECS = float(os.getenv("CONVERSATION_TTL_SECS", "3600"))
 CONVERSATION_REAP_INTERVAL_SECS = float(
@@ -28,12 +33,18 @@ conversations = ConversationStore(
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     """Evict idle conversations on a background loop, like the gateway's
-    session reaper."""
+    session reaper. Reaped conversations also release their pinned sandbox
+    sessions."""
 
     async def reaper_loop() -> None:
         while True:
             await asyncio.sleep(conversations.reap_interval)
-            conversations.reap_expired()
+            for _, session_id in conversations.reap_expired():
+                if session_id:
+                    try:
+                        await sandbox_close_session(session_id)
+                    except HTTPError:
+                        pass  # the gateway may have reaped it already
 
     task = asyncio.create_task(reaper_loop())
     try:
@@ -54,6 +65,7 @@ class ExecRequest(BaseModel):
 class AgentRunRequest(BaseModel):
     task: str
     history: list[dict[str, str]] | None = None
+    conversation_id: str | None = None
 
 
 class ConversationMessageRequest(BaseModel):
@@ -112,11 +124,31 @@ def append_conversation_message(cid: str, req: ConversationMessageRequest) -> di
     return conv
 
 
+async def _resolve_session(conversation_id: str | None) -> str | None:
+    """Return the sandbox session to run in.
+
+    Pinned conversations reuse their live session; a stale or missing one
+    gets a fresh container, which is then pinned to the conversation.
+    Unpinned runs pass None and let the agent create/close on its own.
+    """
+    if not conversation_id:
+        return None
+    if conversations.get(conversation_id) is None:
+        return None
+    pinned = conversations.get_session(conversation_id)
+    if pinned and await session_alive(pinned):
+        return pinned
+    fresh = await sandbox_create_session()
+    conversations.set_session(conversation_id, fresh)
+    return fresh
+
+
 @app.post("/agent/run")
 async def agent_run(req: AgentRunRequest) -> dict:
     if not req.task.strip():
         raise HTTPException(status_code=422, detail="task must not be empty")
-    return await run_agent(req.task, history=req.history)
+    session_id = await _resolve_session(req.conversation_id)
+    return await run_agent(req.task, history=req.history, session_id=session_id)
 
 
 @app.post("/agent/run/stream")
@@ -130,11 +162,13 @@ async def agent_run_stream(req: AgentRunRequest) -> StreamingResponse:
 
     async def run() -> None:
         try:
+            session_id = await _resolve_session(req.conversation_id)
             result = await run_agent(
                 req.task,
                 on_step=lambda step: queue.put_nowait({"event": "step", "data": step}),
                 history=req.history,
                 on_answer_token=emit_answer_token,
+                session_id=session_id,
             )
             queue.put_nowait({"event": "result", "data": result})
         except Exception as e:  # noqa: BLE001 - keep the stream alive and tell the client

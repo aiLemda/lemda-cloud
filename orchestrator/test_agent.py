@@ -344,6 +344,33 @@ def test_run_agent_streams_answer_tokens(monkeypatch) -> None:
     assert "".join(tokens) == "hello world"
 
 
+def test_run_agent_reuses_pinned_session(monkeypatch, fake_session) -> None:
+    calls = {"n": 0}
+    exec_sessions: list[str] = []
+
+    async def fake_chat(messages, tools=None, timeout_s=120, on_token=None) -> dict:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return _tool_msg("echo pinned")
+        return {
+            "role": "assistant",
+            "content": "<answer>done</answer>",
+            "tool_calls": None,
+        }
+
+    async def fake_exec(cmd, session_id=None, image=None, timeout_s=30) -> dict:
+        exec_sessions.append(session_id)
+        return _ok_result()
+
+    monkeypatch.setattr("agent.llm.achat_stream", fake_chat)
+    monkeypatch.setattr("sandbox.sandbox_exec", fake_exec)
+    result = asyncio.run(run_agent("one step", session_id="pinned-1"))
+    assert result["ok"] is True
+    assert exec_sessions == ["pinned-1"]
+    assert fake_session["created"] == []
+    assert fake_session["closed"] == []
+
+
 def run_agent_sync(
     task: str,
     history: list[dict[str, Any]] | None = None,

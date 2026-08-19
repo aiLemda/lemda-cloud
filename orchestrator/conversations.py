@@ -26,18 +26,20 @@ class ConversationStore:
     def reap_interval(self) -> float:
         return self._reap_interval_secs
 
-    def reap_expired(self) -> int:
-        """Evict conversations idle longer than the TTL; returns how many."""
+    def reap_expired(self) -> list[tuple[str, str | None]]:
+        """Evict conversations idle longer than the TTL; returns
+        (conversation id, pinned session id) pairs so the caller can close
+        their sandboxes."""
         cutoff = time.time() - self._ttl_secs
         with self._lock:
             expired = [
-                cid
+                (cid, self._conversations[cid].get("session_id"))
                 for cid, c in self._conversations.items()
                 if c["updated_at"] < cutoff
             ]
-            for cid in expired:
+            for cid, _ in expired:
                 del self._conversations[cid]
-        return len(expired)
+        return expired
 
     def create(self) -> dict[str, Any]:
         cid = f"conv_{uuid4().hex[:12]}"
@@ -46,10 +48,25 @@ class ConversationStore:
             self._conversations[cid] = {
                 "id": cid,
                 "messages": [],
+                "session_id": None,
                 "created_at": now,
                 "updated_at": now,
             }
         return {"id": cid, "messages": []}
+
+    def get_session(self, cid: str) -> str | None:
+        with self._lock:
+            conv = self._conversations.get(cid)
+            if conv is None:
+                return None
+            return conv.get("session_id")
+
+    def set_session(self, cid: str, session_id: str | None) -> None:
+        with self._lock:
+            conv = self._conversations.get(cid)
+            if conv is not None:
+                conv["session_id"] = session_id
+                conv["updated_at"] = time.time()
 
     def list(self) -> list[dict[str, Any]]:
         with self._lock:

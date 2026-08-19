@@ -103,13 +103,18 @@ export async function streamAgent(
   onStep: (step: ToolStep) => void,
   history?: { role: "user" | "assistant"; content: string }[],
   onAnswerToken?: (delta: string) => void,
+  conversationId?: string,
 ): Promise<AgentRunResponse> {
   let res: Response;
   try {
     res = await fetch("/api/agent/run/stream", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ task, history: history ?? [] }),
+      body: JSON.stringify({
+        task,
+        history: history ?? [],
+        conversation_id: conversationId ?? null,
+      }),
     });
   } catch (err) {
     return { ok: false, error: `network error: ${err}`, steps: [] };

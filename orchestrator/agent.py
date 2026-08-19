@@ -96,6 +96,7 @@ async def run_agent(
     on_step: Callable[[dict[str, Any]], None] | None = None,
     history: list[dict[str, Any]] | None = None,
     on_answer_token: Callable[[str], None] | None = None,
+    session_id: str | None = None,
 ) -> dict[str, Any]:
     """Run the agent loop inside one persistent sandbox session.
 
@@ -104,7 +105,13 @@ async def run_agent(
     between steps. `history` carries prior conversation turns so the agent
     can answer follow-ups with full context. `on_answer_token` receives the
     model's answer text as it is generated (answer tags stripped).
+    With `session_id` the run reuses a pinned session (a conversation's
+    workspace) and never closes it - the conversation reaper owns that.
     """
+    if session_id:
+        return await _run_agent(
+            task, session_id, max_steps, on_step, history, on_answer_token
+        )
     session_id = await sandbox.sandbox_create_session()
     try:
         return await _run_agent(

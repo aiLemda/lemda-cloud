@@ -52,3 +52,14 @@ async def sandbox_close_session(session_id: str) -> None:
     async with httpx.AsyncClient(timeout=60) as client:
         resp = await client.delete(f"{settings.gateway_url}/sessions/{session_id}")
         resp.raise_for_status()
+
+
+async def session_alive(session_id: str) -> bool:
+    """True when the gateway still tracks the session (its own reaper may
+    have evicted a pinned session while a conversation sat idle)."""
+    settings = GatewaySettings()
+    async with httpx.AsyncClient(timeout=10) as client:
+        resp = await client.get(f"{settings.gateway_url}/sessions")
+        if resp.status_code != 200:
+            return False
+        return any(s.get("session_id") == session_id for s in resp.json())

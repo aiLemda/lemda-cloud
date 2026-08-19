@@ -106,6 +106,7 @@ export function useChat() {
         step => setSteps(prev => [...prev, step]),
         history,
         delta => setAnswer(prev => prev + delta),
+        convId ?? undefined,
       );
       const answerText = res.answer ?? res.error ?? "";
       setMessages(prev => [...prev, { role: "agent", content: answerText }]);

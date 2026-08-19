@@ -1,11 +1,24 @@
 from fastapi.testclient import TestClient
 
+import main
 from main import app
+
+
+def _async_lambda(fn):
+    async def wrapper(*args, **kwargs):
+        return fn(*args, **kwargs)
+
+    return wrapper
 
 
 def test_agent_run_wiring(monkeypatch) -> None:
     async def fake_run(
-        task: str, max_steps: int = 10, on_step=None, history=None
+        task: str,
+        max_steps: int = 10,
+        on_step=None,
+        history=None,
+        session_id=None,
+        on_answer_token=None,
     ) -> dict:
         return {
             "ok": True,
@@ -33,7 +46,12 @@ def test_agent_run_rejects_empty_task() -> None:
 
 def test_agent_run_stream_emits_steps(monkeypatch) -> None:
     async def fake_run(
-        task: str, max_steps: int = 10, on_step=None, history=None, on_answer_token=None
+        task: str,
+        max_steps: int = 10,
+        on_step=None,
+        history=None,
+        on_answer_token=None,
+        session_id=None,
     ) -> dict:
         for n in (1, 2):
             if on_step:
@@ -65,7 +83,12 @@ def test_agent_run_stream_emits_steps(monkeypatch) -> None:
 
 def test_agent_run_stream_emits_answer_tokens(monkeypatch) -> None:
     async def fake_run(
-        task: str, max_steps: int = 10, on_step=None, history=None, on_answer_token=None
+        task: str,
+        max_steps: int = 10,
+        on_step=None,
+        history=None,
+        on_answer_token=None,
+        session_id=None,
     ) -> dict:
         if on_answer_token:
             on_answer_token("<answer>hel")
@@ -82,11 +105,121 @@ def test_agent_run_stream_emits_answer_tokens(monkeypatch) -> None:
     assert "event: result" in body
 
 
+def test_pinned_session_reused_when_alive(monkeypatch) -> None:
+    seen: dict[str, object] = {}
+    monkeypatch.setattr(
+        "main.session_alive", _async_lambda(lambda sid: sid == "sess-alive")
+    )
+    created: list[str] = []
+
+    async def fake_create(image=None) -> str:
+        sid = f"sess-{len(created)}"
+        created.append(sid)
+        return sid
+
+    async def fake_run(
+        task,
+        max_steps=10,
+        on_step=None,
+        history=None,
+        on_answer_token=None,
+        session_id=None,
+    ) -> dict:
+        seen.update({"task": task, "session_id": session_id})
+        return {"ok": True, "answer": "done", "steps": []}
+
+    monkeypatch.setattr("main.sandbox_create_session", fake_create)
+    monkeypatch.setattr("main.run_agent", fake_run)
+    client = TestClient(app)
+    cid = client.post("/conversations").json()["id"]
+    main.conversations.set_session(cid, "sess-alive")
+    resp = client.post(
+        "/agent/run",
+        json={"task": "hi", "conversation_id": cid},
+    )
+    assert resp.status_code == 200
+    assert seen["session_id"] == "sess-alive"
+    assert created == []
+
+
+def test_stale_pinned_session_recreated(monkeypatch) -> None:
+    seen: dict[str, object] = {}
+    monkeypatch.setattr("main.session_alive", _async_lambda(lambda sid: False))
+    created: list[str] = []
+
+    async def fake_create(image=None) -> str:
+        sid = f"sess-{len(created)}"
+        created.append(sid)
+        return sid
+
+    async def fake_run(
+        task,
+        max_steps=10,
+        on_step=None,
+        history=None,
+        on_answer_token=None,
+        session_id=None,
+    ) -> dict:
+        seen.update({"task": task, "session_id": session_id})
+        return {"ok": True, "answer": "done", "steps": []}
+
+    monkeypatch.setattr("main.sandbox_create_session", fake_create)
+    monkeypatch.setattr("main.run_agent", fake_run)
+    client = TestClient(app)
+    cid = client.post("/conversations").json()["id"]
+    main.conversations.set_session(cid, "sess-stale")
+    resp = client.post(
+        "/agent/run",
+        json={"task": "hi", "conversation_id": cid},
+    )
+    assert resp.status_code == 200
+    assert seen["session_id"] == "sess-0"
+    assert created == ["sess-0"]
+    assert main.conversations.get_session(cid) == "sess-0"
+
+
+def test_unknown_conversation_runs_unpinned(monkeypatch) -> None:
+    seen: dict[str, object] = {}
+    monkeypatch.setattr("main.session_alive", _async_lambda(lambda sid: True))
+    created: list[str] = []
+
+    async def fake_create(image=None) -> str:
+        created.append("sess-x")
+        return "sess-x"
+
+    async def fake_run(
+        task,
+        max_steps=10,
+        on_step=None,
+        history=None,
+        on_answer_token=None,
+        session_id=None,
+    ) -> dict:
+        seen.update({"task": task, "session_id": session_id})
+        return {"ok": True, "answer": "done", "steps": []}
+
+    monkeypatch.setattr("main.sandbox_create_session", fake_create)
+    monkeypatch.setattr("main.run_agent", fake_run)
+    client = TestClient(app)
+    resp = client.post(
+        "/agent/run",
+        json={"task": "hi", "conversation_id": "conv_nope"},
+    )
+    assert resp.status_code == 200
+    assert seen["session_id"] is None
+    assert created == []
+
+
 def test_agent_run_forwards_history(monkeypatch) -> None:
     seen: dict[str, object] = {}
 
     async def fake_run(
-        task: str, max_steps: int = 10, on_step=None, history=None
+        task: str,
+        max_steps: int = 10,
+        on_step=None,
+        history=None,
+        on_answer_token=None,
+        session_id=None,
     ) -> dict:
         seen.update({"task": task, "history": history})
         return {"ok": True, "answer": "done", "steps": []}
